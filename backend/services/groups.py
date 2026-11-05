@@ -142,19 +142,21 @@ def group_status(conn: sqlite3.Connection, group_id: int) -> list[dict[str, Any]
         f"""
         SELECT cb.id AS batch_id, cb.batch_name, cb.revival_date, cb.initial_pd,
                cl.id AS cell_line_id, cl.name AS cell_name, cl.type, cl.default_passage_interval,
+               gm.sort_order,
                cr.id AS record_id, cr.passage, cr.date AS last_passage,
                cr.inoculum_cells, cr.inoculum_dishes, cr.harvested_cells,
                cr.pd, cr.cumulative_pd, cr.status, cr.next_passage_date, cr.notes
         FROM culture_batches cb
         JOIN cell_lines cl ON cl.id = cb.cell_line_id
+        LEFT JOIN cell_group_members gm ON gm.group_id = ? AND gm.cell_line_id = cb.cell_line_id
         LEFT JOIN culture_records cr ON cr.id = (
             SELECT id FROM culture_records r WHERE r.batch_id = cb.id AND r.is_active = 1
             ORDER BY r.date DESC, r.id DESC LIMIT 1
         )
         WHERE cb.is_active = 1 AND cb.cell_line_id IN ({placeholders(member_ids)})
-        ORDER BY cl.name, cb.batch_name, cb.id
+        ORDER BY COALESCE(gm.sort_order, 9999), cl.name, cb.batch_name, cb.id
         """,
-        tuple(member_ids),
+        (group_id, *member_ids),
     )
     for row in rows:
         row["remaining_days"] = remaining_days(row.get("next_passage_date"))
