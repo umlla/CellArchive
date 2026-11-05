@@ -39,33 +39,8 @@ def _find_executable(paths: tuple[str, ...]) -> str | None:
     return None
 
 
-def _default_browser_kind() -> str:
-    if os.name != "nt":
-        return "default"
-    try:
-        import winreg
-
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice",
-        ) as key:
-            prog_id = str(winreg.QueryValueEx(key, "ProgId")[0]).lower()
-    except (OSError, ImportError):
-        return "default"
-    if "edge" in prog_id:
-        return "edge"
-    if "chrome" in prog_id:
-        return "chrome"
-    return "default"
-
-
-def _launch_browser(command: list[str]) -> bool:
-    """启动浏览器，并确认它没有立刻退出。
-
-    直接 Popen 启动 Chrome/Edge 时，如果浏览器拒绝新实例（例如已有实例以更高权限运行），
-    进程会立刻退出且不报错，看起来就像「双击后没有自动出现页面」。
-    这里先尝试 Popen，失败或秒退时改用 ShellExecute（os.startfile），与手动双击等价。
-    """
+def _open_with_launch(command: list[str]) -> bool:
+    """用指定浏览器打开网址，并确认它没有立刻退出。"""
     try:
         process = subprocess.Popen(
             command,
@@ -76,80 +51,70 @@ def _launch_browser(command: list[str]) -> bool:
         )
     except OSError:
         logger.exception("直接启动浏览器失败：%s", command[0])
-    else:
-        time.sleep(1.0)
-        code = process.poll()
-        if code is None:
-            return True
-        logger.warning("浏览器启动后立即退出（退出码 %s），改用系统默认方式打开", code)
-
-    try:
-        os.startfile(command[-1])
+        return False
+    time.sleep(1.0)
+    code = process.poll()
+    if code is None:
         return True
-    except OSError:
-        logger.exception("系统默认浏览器打开失败：%s", command[-1])
+    logger.info("浏览器进程立即退出（退出码 %s），尝试其他打开方式", code)
+    return False
+
+
+def _open_with_shell(url: str) -> bool:
+    """用系统默认关联打开（等同手动双击链接）。"""
+    if os.name == "nt":
+        try:
+            os.startfile(url)
+            return True
+        except OSError:
+            logger.exception("系统默认浏览器打开失败：%s", url)
+            return False
+    try:
+        return bool(webbrowser.open(url))
+    except Exception:  # noqa: BLE001 - 浏览器关联损坏时不要影响主程序
+        logger.exception("webbrowser 打开失败：%s", url)
         return False
 
 
 def open_url(url: str, config: Config) -> bool:
-    """打开浏览器，返回是否成功发起打开动作。
+    """打开浏览器。
 
-    Edge 作为默认浏览器时，如果系统中存在以管理员权限运行的 Edge 实例，
-    普通进程直接把网址交给它会弹出「现有实例正在以提升的权限运行」。
-    优先用 Chrome 打开；没有 Chrome 时，用独立配置目录启动一个 Edge 窗口。
+    优先交给系统关联处理（等同手动点链接），浏览器正常时一定会有反应；
+    再尝试 Chrome，最后用独立配置目录启动一个 Edge 窗口（避开管理员权限的 Edge 实例）。
     """
     if os.name != "nt":
-        try:
-            return bool(webbrowser.open(url))
-        except Exception:  # noqa: BLE001 - 浏览器关联损坏时不要影响主程序
-            logger.exception("webbrowser 打开失败：%s", url)
-            return False
+        return _open_with_shell(url)
 
-    default_browser = _default_browser_kind()
-    if default_browser == "edge":
-        chrome = _find_executable(CHROME_PATHS)
-        if chrome and _launch_browser(
-            [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url]
-        ):
-            return True
-        edge = _find_executable(EDGE_PATHS)
-        if edge:
-            profile = config.db_path.parent / "browser-profile" / "edge"
-            try:
-                profile.mkdir(parents=True, exist_ok=True)
-                if _launch_browser(
-                    [
-                        edge,
-                        f"--user-data-dir={profile}",
-                        "--no-first-run",
-                        "--no-default-browser-check",
-                        "--disable-sync",
-                        "--new-window",
-                        url,
-                    ]
-                ):
-                    return True
-            except OSError:
-                logger.exception("创建 Edge 配置目录失败")
-    elif default_browser == "chrome":
-        chrome = _find_executable(CHROME_PATHS)
-        if chrome and _launch_browser(
-            [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url]
-        ):
-            return True
-
-    # 用系统默认关联打开，兼容绿色版/非标准路径的浏览器
-    try:
-        os.startfile(url)
+    if _open_with_shell(url):
         return True
-    except OSError:
-        logger.exception("系统默认浏览器打开失败：%s", url)
 
-    try:
-        return bool(webbrowser.open(url))
-    except Exception:  # noqa: BLE001
-        logger.exception("webbrowser 打开失败：%s", url)
-        return False
+    chrome = _find_executable(CHROME_PATHS)
+    if chrome and _open_with_launch(
+        [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url]
+    ):
+        return True
+
+    edge = _find_executable(EDGE_PATHS)
+    if edge:
+        profile = config.db_path.parent / "browser-profile" / "edge"
+        try:
+            profile.mkdir(parents=True, exist_ok=True)
+            if _open_with_launch(
+                [
+                    edge,
+                    f"--user-data-dir={profile}",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-sync",
+                    "--new-window",
+                    url,
+                ]
+            ):
+                return True
+        except OSError:
+            logger.exception("创建 Edge 配置目录失败")
+
+    return False
 
 
 def lan_addresses() -> list[str]:
@@ -235,7 +200,7 @@ def open_browser_when_ready(url: str, port: int, config: Config, timeout: float 
         print(f" 已打开浏览器：{url}", flush=True)
     else:
         logger.warning("自动打开浏览器失败，请手动访问：%s", url)
-        print(f" 自动打开浏览器失败，请手动访问：{url}", flush=True)
+        print(f" 未能自动打开浏览器，请手动访问：{url}", flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
