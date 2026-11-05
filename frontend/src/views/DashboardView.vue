@@ -102,6 +102,15 @@
                   ＋ 录入传代
                 </el-button>
                 <el-switch v-model="includeEnded" active-text="显示已终止" @change="reloadLine" />
+                <el-button
+                  v-if="endedBatches.length"
+                  size="small"
+                  type="warning"
+                  plain
+                  @click="restoreLineBatches"
+                >
+                  撤销全部终止（{{ endedBatches.length }}）
+                </el-button>
                 <el-button size="small" @click="openLineEdit">编辑信息</el-button>
               </div>
             </div>
@@ -669,6 +678,10 @@ const activeBatches = computed(() =>
   (lineDetail.value?.batches || []).filter((batch) => batch.is_active),
 )
 
+const endedBatches = computed(() =>
+  (lineDetail.value?.batches || []).filter((batch) => !batch.is_active),
+)
+
 // 优先用后端汇总的 latest_pd；旧版后端没有该字段时，从批次当前记录里取
 const lineCurrentPd = computed(() => {
   const line = lineDetail.value?.cell_line
@@ -792,6 +805,31 @@ function openLineEdit() {
     notes: line.notes || '',
   }
   lineEditVisible.value = true
+}
+
+async function restoreLineBatches() {
+  const batches = endedBatches.value
+  if (!batches.length) return
+  try {
+    await ElMessageBox.confirm(
+      `撤销「${lineDetail.value.cell_line.name}」的 ${batches.length} 个已终止批次，全部恢复为在养？`,
+      '撤销终止',
+      { type: 'info', confirmButtonText: '撤销终止', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  let ok = 0
+  for (const batch of batches) {
+    try {
+      await batchApi.restore(batch.id)
+      ok += 1
+    } catch {
+      // 单条失败不阻断其余批次
+    }
+  }
+  ElMessage.success(`已恢复 ${ok} 个批次`)
+  await reloadAll()
 }
 
 async function saveLine() {

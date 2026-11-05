@@ -243,6 +243,12 @@ def terminate_batch(batch_id: int):
     return jsonify(batches.terminate_batch(get_db(), batch_id, reason, user=user()))
 
 
+@api_bp.post("/batches/<int:batch_id>/restore")
+@write
+def restore_batch(batch_id: int):
+    return jsonify(batches.restore_batch(get_db(), batch_id, user=user()))
+
+
 @api_bp.get("/batches/<int:batch_id>/records")
 def list_batch_records(batch_id: int):
     return jsonify(records.list_records(get_db(), batch_id))

@@ -74,6 +74,7 @@ export const batchApi = {
   update: (id, payload) => http.patch(`/batches/${id}`, payload),
   remove: (id) => http.delete(`/batches/${id}`),
   terminate: (id, reason) => http.post(`/batches/${id}/terminate`, { reason }),
+  restore: (id) => http.post(`/batches/${id}/restore`),
   records: (id) => http.get(`/batches/${id}/records`),
   csvUrl: (id) => `/api/batches/${id}/records.csv`,
 }

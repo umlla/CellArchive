@@ -102,6 +102,40 @@ def test_batch_and_record_pd_flow(client):
     }).status_code == 409
 
 
+def test_restore_terminated_batch(client):
+    line = create_line(client)
+    batch = create_batch(client, line["id"])
+    first = add_record(client, batch["id"])
+    second = add_record(client, batch["id"], date="2026-02-04", harvested_cells=8.0, next_passage_days=0)
+
+    assert client.post(f"/api/batches/{batch['id']}/terminate", json={"reason": "其他"}).status_code == 200
+    ended = client.get(f"/api/batches/{batch['id']}").get_json()["batch"]
+    assert ended["is_active"] == 0
+    assert ended["end_reason"] == "其他"
+    assert client.post("/api/records", json={"batch_id": batch["id"], "harvested_cells": 1}).status_code == 409
+
+    restored = client.post(f"/api/batches/{batch['id']}/restore")
+    assert restored.status_code == 200
+    body = restored.get_json()
+    assert body["is_active"] == 1
+    assert body["end_date"] is None
+    assert body["end_reason"] is None
+    assert body["current_record"]["id"] == second["id"]
+
+    records = client.get(f"/api/batches/{batch['id']}/records").get_json()
+    active = [record for record in records if record["is_active"] == 1]
+    assert [record["id"] for record in active] == [second["id"]]
+    assert first["id"] in [record["id"] for record in records]
+
+    # 恢复后可以继续录入
+    assert client.post("/api/records", json={
+        "batch_id": batch["id"], "harvested_cells": 4.0,
+    }).status_code == 201
+
+    # 活跃批次再次恢复会提示冲突
+    assert client.post(f"/api/batches/{batch['id']}/restore").status_code == 409
+
+
 def test_record_with_negative_pd_keeps_cumulative(client):
     line = create_line(client)
     batch = create_batch(client, line["id"])

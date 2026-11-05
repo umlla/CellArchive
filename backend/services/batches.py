@@ -158,6 +158,20 @@ def terminate_batch(conn: sqlite3.Connection, batch_id: int, reason: str | None 
     return get_batch(conn, batch_id)
 
 
+def restore_batch(conn: sqlite3.Connection, batch_id: int, user: str | None = None) -> dict[str, Any]:
+    """撤销终止：恢复为在养状态，并重新标记最新一条传代记录为活跃记录。"""
+    batch = get_or_404(conn, "culture_batches", batch_id, "培养批次")
+    if int(batch["is_active"]):
+        raise Conflict("该批次本来就是活跃状态，无需恢复")
+    conn.execute(
+        "UPDATE culture_batches SET is_active = 1, end_date = NULL, end_reason = NULL WHERE id = ?",
+        (batch_id,),
+    )
+    refresh_active_record(conn, batch_id)
+    audit(conn, user, "restore", "batch", batch_id, {"batch_name": batch["batch_name"]})
+    return get_batch(conn, batch_id)
+
+
 def delete_batch(conn: sqlite3.Connection, batch_id: int, user: str | None = None) -> dict[str, Any]:
     batch = get_or_404(conn, "culture_batches", batch_id, "培养批次")
     deleted_records = conn.execute(

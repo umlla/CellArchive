@@ -26,6 +26,7 @@
             <el-dropdown-item command="detail">记录与曲线</el-dropdown-item>
             <el-dropdown-item command="csv">导出 CSV</el-dropdown-item>
             <el-dropdown-item v-if="batch.is_active" command="terminate" divided>终止批次</el-dropdown-item>
+            <el-dropdown-item v-else command="restore" divided>撤销终止</el-dropdown-item>
             <el-dropdown-item command="delete" divided>删除批次</el-dropdown-item>
           </el-dropdown-menu>
         </template>
@@ -66,6 +67,9 @@
       <span v-else-if="current" class="small faint">尚未设置下次传代日期</span>
       <span v-else class="small faint">批次已建立，等待首次传代</span>
       <div class="row">
+        <el-button v-if="!batch.is_active" size="small" type="primary" plain @click="restoreBatch">
+          撤销终止
+        </el-button>
         <el-button v-if="batch.is_active" size="small" type="primary" @click="emit('record', batch)">
           录入传代
         </el-button>
@@ -251,6 +255,8 @@ function openDetail() {
 async function onCommand(command) {
   if (command === 'record') {
     emit('record', props.batch)
+  } else if (command === 'restore') {
+    await restoreBatch()
   } else if (command === 'detail') {
     detailVisible.value = true
   } else if (command === 'csv') {
@@ -315,6 +321,21 @@ async function removeRecord(row) {
   await recordApi.remove(row.id)
   ElMessage.success('记录已删除')
   await loadDetail()
+  emit('refresh')
+}
+
+async function restoreBatch() {
+  try {
+    await ElMessageBox.confirm(
+      `撤销「${props.batch.batch_name}」的终止，恢复为在养批次？`,
+      '撤销终止',
+      { type: 'info', confirmButtonText: '撤销终止', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  await batchApi.restore(props.batch.id)
+  ElMessage.success('已恢复为在养批次')
   emit('refresh')
 }
 
