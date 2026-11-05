@@ -39,6 +39,27 @@ def _find_executable(paths: tuple[str, ...]) -> str | None:
     return None
 
 
+def _default_browser_kind() -> str:
+    """读取系统默认浏览器：edge / chrome / 其他。"""
+    if os.name != "nt":
+        return "default"
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice",
+        ) as key:
+            prog_id = str(winreg.QueryValueEx(key, "ProgId")[0]).lower()
+    except (OSError, ImportError):
+        return "default"
+    if "edge" in prog_id:
+        return "edge"
+    if "chrome" in prog_id:
+        return "chrome"
+    return "default"
+
+
 def _open_with_launch(command: list[str]) -> bool:
     """用指定浏览器打开网址，并确认它没有立刻退出。"""
     try:
@@ -76,14 +97,53 @@ def _open_with_shell(url: str) -> bool:
         return False
 
 
+def _open_with_edge_profile(url: str, config: Config) -> bool:
+    """用独立配置目录启动 Edge 窗口。
+
+    系统里有以管理员权限运行的 Edge 时，普通权限去调系统默认的 Edge 会弹
+    「Microsoft Edge 未响应，因为现有实例正在以提升的权限运行」，
+    独立配置目录会作为新实例启动，不会触发这个提示。
+    """
+    edge = _find_executable(EDGE_PATHS)
+    if not edge:
+        return False
+    profile = config.db_path.parent / "browser-profile" / "edge"
+    try:
+        profile.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        logger.exception("创建 Edge 配置目录失败")
+        return False
+    return _open_with_launch(
+        [
+            edge,
+            f"--user-data-dir={profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-sync",
+            "--new-window",
+            url,
+        ]
+    )
+
+
 def open_url(url: str, config: Config) -> bool:
     """打开浏览器。
 
-    优先交给系统关联处理（等同手动点链接），浏览器正常时一定会有反应；
-    再尝试 Chrome，最后用独立配置目录启动一个 Edge 窗口（避开管理员权限的 Edge 实例）。
+    默认浏览器是 Edge 时直接开独立配置的 Edge 窗口，避免管理员权限实例的提示；
+    其他情况先交给系统关联处理，再依次尝试 Chrome、独立配置的 Edge。
     """
     if os.name != "nt":
         return _open_with_shell(url)
+
+    if _default_browser_kind() == "edge":
+        if _open_with_edge_profile(url, config):
+            return True
+        if _open_with_shell(url):
+            return True
+        chrome = _find_executable(CHROME_PATHS)
+        return bool(chrome) and _open_with_launch(
+            [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url]
+        )
 
     if _open_with_shell(url):
         return True
@@ -94,27 +154,7 @@ def open_url(url: str, config: Config) -> bool:
     ):
         return True
 
-    edge = _find_executable(EDGE_PATHS)
-    if edge:
-        profile = config.db_path.parent / "browser-profile" / "edge"
-        try:
-            profile.mkdir(parents=True, exist_ok=True)
-            if _open_with_launch(
-                [
-                    edge,
-                    f"--user-data-dir={profile}",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "--disable-sync",
-                    "--new-window",
-                    url,
-                ]
-            ):
-                return True
-        except OSError:
-            logger.exception("创建 Edge 配置目录失败")
-
-    return False
+    return _open_with_edge_profile(url, config)
 
 
 def lan_addresses() -> list[str]:
