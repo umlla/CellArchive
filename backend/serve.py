@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 
 logger = logging.getLogger(__name__)
@@ -58,19 +59,35 @@ def _default_browser_kind() -> str:
     return "default"
 
 
-def _spawn(command: list[str]) -> bool:
-    """启动外部程序；窗口模式下标准句柄可能无效，显式指向 DEVNULL。"""
+def _launch_browser(command: list[str]) -> bool:
+    """启动浏览器，并确认它没有立刻退出。
+
+    直接 Popen 启动 Chrome/Edge 时，如果浏览器拒绝新实例（例如已有实例以更高权限运行），
+    进程会立刻退出且不报错，看起来就像「双击后没有自动出现页面」。
+    这里先尝试 Popen，失败或秒退时改用 ShellExecute（os.startfile），与手动双击等价。
+    """
     try:
-        subprocess.Popen(
+        process = subprocess.Popen(
             command,
             close_fds=True,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+    except OSError:
+        logger.exception("直接启动浏览器失败：%s", command[0])
+    else:
+        time.sleep(1.0)
+        code = process.poll()
+        if code is None:
+            return True
+        logger.warning("浏览器启动后立即退出（退出码 %s），改用系统默认方式打开", code)
+
+    try:
+        os.startfile(command[-1])
         return True
     except OSError:
-        logger.exception("启动浏览器失败：%s", command[0])
+        logger.exception("系统默认浏览器打开失败：%s", command[-1])
         return False
 
 
@@ -81,50 +98,56 @@ def open_url(url: str, config: Config) -> bool:
     普通进程直接把网址交给它会弹出「现有实例正在以提升的权限运行」。
     优先用 Chrome 打开；没有 Chrome 时，用独立配置目录启动一个 Edge 窗口。
     """
-    if os.name == "nt":
-        browser = _default_browser_kind()
-        if browser == "edge":
-            chrome = _find_executable(CHROME_PATHS)
-            if chrome and _spawn(
-                [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url]
-            ):
-                return True
-            edge = _find_executable(EDGE_PATHS)
-            if edge:
-                profile = config.db_path.parent / "browser-profile" / "edge"
-                try:
-                    profile.mkdir(parents=True, exist_ok=True)
-                    if _spawn(
-                        [
-                            edge,
-                            f"--user-data-dir={profile}",
-                            "--no-first-run",
-                            "--no-default-browser-check",
-                            "--disable-sync",
-                            "--new-window",
-                            url,
-                        ]
-                    ):
-                        return True
-                except OSError:
-                    logger.exception("创建 Edge 配置目录失败")
-        elif browser == "chrome":
-            chrome = _find_executable(CHROME_PATHS)
-            if chrome and _spawn(
-                [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url]
-            ):
-                return True
-
-        # 最后用系统默认关联打开，兼容绿色版/非标准路径的浏览器
+    if os.name != "nt":
         try:
-            os.startfile(url)
+            return bool(webbrowser.open(url))
+        except Exception:  # noqa: BLE001 - 浏览器关联损坏时不要影响主程序
+            logger.exception("webbrowser 打开失败：%s", url)
+            return False
+
+    default_browser = _default_browser_kind()
+    if default_browser == "edge":
+        chrome = _find_executable(CHROME_PATHS)
+        if chrome and _launch_browser(
+            [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url]
+        ):
             return True
-        except OSError:
-            logger.exception("系统默认浏览器打开失败：%s", url)
+        edge = _find_executable(EDGE_PATHS)
+        if edge:
+            profile = config.db_path.parent / "browser-profile" / "edge"
+            try:
+                profile.mkdir(parents=True, exist_ok=True)
+                if _launch_browser(
+                    [
+                        edge,
+                        f"--user-data-dir={profile}",
+                        "--no-first-run",
+                        "--no-default-browser-check",
+                        "--disable-sync",
+                        "--new-window",
+                        url,
+                    ]
+                ):
+                    return True
+            except OSError:
+                logger.exception("创建 Edge 配置目录失败")
+    elif default_browser == "chrome":
+        chrome = _find_executable(CHROME_PATHS)
+        if chrome and _launch_browser(
+            [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url]
+        ):
+            return True
+
+    # 用系统默认关联打开，兼容绿色版/非标准路径的浏览器
+    try:
+        os.startfile(url)
+        return True
+    except OSError:
+        logger.exception("系统默认浏览器打开失败：%s", url)
 
     try:
         return bool(webbrowser.open(url))
-    except Exception:  # noqa: BLE001 - 浏览器关联损坏时不要影响主程序
+    except Exception:  # noqa: BLE001
         logger.exception("webbrowser 打开失败：%s", url)
         return False
 
@@ -185,6 +208,36 @@ def existing_celltracker(port: int) -> bool:
         return False
 
 
+def open_browser_when_ready(url: str, port: int, config: Config, timeout: float = 15.0) -> None:
+    """等服务真正能响应后再打开浏览器。
+
+    双击 start.bat 时，服务启动后浏览器可能立即打开一个「无法访问此网站」的页面，
+    或者浏览器还没就绪就退出，看起来就像「双击后没有自动出现页面」。
+    这里先轮询 /api/healthz，确认可用后再打开，并记录结果。
+    """
+    import json
+    import urllib.request
+
+    deadline = time.time() + timeout
+    health = f"http://127.0.0.1:{port}/api/healthz"
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(health, timeout=0.8) as response:
+                if response.status == 200 and json.loads(response.read().decode("utf-8")).get("ok"):
+                    break
+        except Exception:  # noqa: BLE001 - 服务尚未就绪
+            pass
+        time.sleep(0.3)
+
+    opened = open_url(url, config)
+    if opened:
+        logger.info("已在浏览器中打开：%s", url)
+        print(f" 已打开浏览器：{url}", flush=True)
+    else:
+        logger.warning("自动打开浏览器失败，请手动访问：%s", url)
+        print(f" 自动打开浏览器失败，请手动访问：{url}", flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     configure_console()
     parser = argparse.ArgumentParser(description="启动 CellTracker v4")
@@ -214,7 +267,10 @@ def main(argv: list[str] | None = None) -> int:
         if existing_celltracker(config.port):
             print(f"CellTracker 已经运行在 {local_url}")
             if config.open_browser and not args.no_browser:
-                open_url(local_url, config)
+                if open_url(local_url, config):
+                    print(f" 已打开浏览器：{local_url}", flush=True)
+                else:
+                    print(f" 自动打开浏览器失败，请手动访问：{local_url}", flush=True)
             return 0
         print("=" * 62)
         print(f" 端口 {config.port} 已被其他程序占用，CellTracker 无法启动。")
@@ -242,7 +298,12 @@ def main(argv: list[str] | None = None) -> int:
     print("=" * 62, flush=True)
 
     if config.open_browser and not args.no_browser:
-        threading.Timer(1.2, lambda: open_url(local_url, config)).start()
+        threading.Thread(
+            target=open_browser_when_ready,
+            args=(local_url, config.port, config),
+            name="open-browser",
+            daemon=True,
+        ).start()
 
     try:
         from waitress import serve
