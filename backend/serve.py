@@ -95,7 +95,17 @@ def main(argv: list[str] | None = None) -> int:
     # 端口被占用时给出明确提示，而不是抛出一大段 traceback
     if not port_available(config.host, config.port):
         if existing_celltracker(config.port):
-            print(f"CellTracker 已经运行在 {local_url}，直接用浏览器打开该地址即可。")
+            # 重复双击时不要自己退出：退出会连带关闭正在运行的那个控制台窗口，
+            # 看起来就像「服务已停止」。这里停住，等用户按键再结束。
+            print("=" * 62)
+            print(f" CellTracker 已经在运行：{local_url}")
+            print(" 请直接用浏览器打开上面的地址。")
+            print(" 如果浏览器里打不开，请关闭所有 CellTracker 控制台窗口后重新双击 start.bat。")
+            print("=" * 62, flush=True)
+            try:
+                input(" 按回车键关闭本窗口（不影响正在运行的服务）...")
+            except EOFError:
+                pass
             return 0
         print("=" * 62)
         print(f" 端口 {config.port} 已被其他程序占用，CellTracker 无法启动。")
