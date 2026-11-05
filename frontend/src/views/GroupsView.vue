@@ -3,15 +3,23 @@
     <div class="panel-head">
       <div>
         <h2>细胞组管理</h2>
-        <p class="sub">共 {{ groups.length }} 个组，组内顺序决定看板与批量录入的排列顺序</p>
+        <p class="sub">
+          显示 {{ visibleGroups.length }} 个有在养细胞的组
+          <template v-if="hiddenGroups.length">（另有 {{ hiddenGroups.length }} 个组暂无在养细胞，已隐藏）</template>
+          · 组内顺序决定看板与批量录入的排列顺序
+        </p>
       </div>
       <el-button type="primary" @click="openCreate">
         <el-icon><Plus /></el-icon>新建细胞组
       </el-button>
     </div>
 
-    <div v-if="groups.length" class="group-cards">
-      <div v-for="group in groups" :key="group.id" class="group-card">
+    <div v-if="hiddenGroups.length" class="hidden-bar">
+      <el-switch v-model="showEmpty" active-text="显示没有在养细胞的组" />
+    </div>
+
+    <div v-if="visibleGroups.length" class="group-cards">
+      <div v-for="group in visibleGroups" :key="group.id" class="group-card">
         <div class="row between">
           <div>
             <div class="group-name">{{ group.group_name }}</div>
@@ -55,7 +63,11 @@
     </div>
 
     <div v-else class="empty-hint">
-      <span class="icon">📂</span>还没有细胞组，创建一个把常一起操作的细胞株归类
+      <span class="icon">📂</span>
+      <template v-if="groups.length">
+        当前没有含在养细胞的组<template v-if="!showEmpty">，可打开上方开关查看全部 {{ groups.length }} 个组</template>
+      </template>
+      <template v-else>还没有细胞组，创建一个把常一起操作的细胞株归类</template>
     </div>
 
     <!-- 创建 / 编辑 -->
@@ -128,6 +140,7 @@ import { loadMeta } from '../store'
 const router = useRouter()
 const groups = ref([])
 const lines = ref([])
+const showEmpty = ref(false)
 const dialogVisible = ref(false)
 const editing = ref(false)
 const saving = ref(false)
@@ -147,6 +160,11 @@ const addableLines = computed(() => {
 function activeBatches(group) {
   return (group.members || []).reduce((total, member) => total + (member.active_batch_count || 0), 0)
 }
+
+const hiddenGroups = computed(() => groups.value.filter((group) => activeBatches(group) === 0))
+const visibleGroups = computed(() =>
+  showEmpty.value ? groups.value : groups.value.filter((group) => activeBatches(group) > 0),
+)
 
 async function reload() {
   groups.value = await groupApi.list()
@@ -254,6 +272,12 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.hidden-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 18px 0;
+}
+
 .group-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
