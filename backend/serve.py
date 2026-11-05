@@ -27,6 +27,14 @@ CHROME_PATHS = (
     r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe",
     r"%LocalAppData%\Google\Chrome\Application\chrome.exe",
 )
+BROWSER_PROCESS_NAMES = (
+    "chrome.exe",
+    "msedge.exe",
+    "firefox.exe",
+    "360se.exe",
+    "360chrome.exe",
+    "brave.exe",
+)
 
 
 def _find_executable(paths: tuple[str, ...]) -> str | None:
@@ -60,8 +68,51 @@ def _default_browser_kind() -> str:
     return "default"
 
 
+def _browser_process_ids() -> set[int] | None:
+    """列出当前运行中的浏览器进程；无法获取时返回 None（避免误判为「没打开」）。"""
+    if os.name != "nt":
+        return None
+    try:
+        completed = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            timeout=8,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    output = completed.stdout.decode("utf-8", errors="ignore")
+    if "chrome" not in output.lower() and "msedge" not in output.lower():
+        output = completed.stdout.decode("mbcs", errors="ignore")
+    pids: set[int] = set()
+    for line in output.splitlines():
+        parts = [part.strip('"') for part in line.split('","')]
+        if len(parts) >= 2 and parts[0].lower() in BROWSER_PROCESS_NAMES:
+            try:
+                pids.add(int(parts[1]))
+            except ValueError:
+                continue
+    return pids
+
+
+def _wait_for_new_browser_window(before: set[int], timeout: float = 5.0) -> bool:
+    """等待出现新的浏览器进程（浏览器已在运行时，打开新窗口也会新建渲染进程）。"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        current = _browser_process_ids()
+        if current is not None and current - before:
+            return True
+        time.sleep(0.4)
+    return False
+
+
 def _open_with_launch(command: list[str]) -> bool:
-    """用指定浏览器打开网址，并确认它没有立刻退出。"""
+    """用指定浏览器打开网址，并确认它没有立刻退出。
+
+    浏览器已有实例时，新进程会在约 1 秒内退出并把网址交给现有实例，
+    所以额外观察是否有新的浏览器进程出现。
+    """
+    before = _browser_process_ids()
     try:
         process = subprocess.Popen(
             command,
@@ -76,6 +127,8 @@ def _open_with_launch(command: list[str]) -> bool:
     time.sleep(1.0)
     code = process.poll()
     if code is None:
+        return True
+    if before is not None and _wait_for_new_browser_window(before, timeout=3.0):
         return True
     logger.info("浏览器进程立即退出（退出码 %s），尝试其他打开方式", code)
     return False
