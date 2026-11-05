@@ -2,6 +2,12 @@
 
 记录细胞株、培养批次、传代、冻存和生长曲线的小工具，在浏览器里使用。
 
+## 界面预览
+
+![在养细胞总览（演示数据）](docs/preview-dashboard.png)
+
+![传代记录与生长曲线（演示数据）](docs/preview-curve.png)
+
 ## 一、下载
 
 1. 打开 <https://github.com/umlla/celltracker>
