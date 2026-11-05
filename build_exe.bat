@@ -81,6 +81,7 @@ if exist "dist\_keep_readme.txt" (
     >> "dist\CellTracker\使用说明.txt" echo 4. 数据保存在 exe 同目录的 data 文件夹中，请勿手动删除。
     >> "dist\CellTracker\使用说明.txt" echo 5. 如果端口被占用，请修改 config.json 中的 port 后重新启动。
     >> "dist\CellTracker\使用说明.txt" echo 6. 换电脑时，把整个 CellTracker 文件夹复制过去即可。
+    >> "dist\CellTracker\使用说明.txt" echo 7. 首次运行如果 Windows 提示“已保护你的电脑”，点“更多信息” → “仍要运行”。
 )
 
 echo.
