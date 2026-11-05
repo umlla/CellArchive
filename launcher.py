@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 import threading
@@ -17,15 +18,30 @@ import webbrowser
 from pathlib import Path
 
 APP_TITLE = "CellTracker · 细胞培养追踪"
+logger = logging.getLogger("celltracker.launcher")
 
 
-def _open_url(url: str) -> None:
+def _open_url(url: str) -> bool:
     from backend.serve import open_url
 
     try:
-        open_url(url, _CONFIG)
+        if open_url(url, _CONFIG):
+            return True
     except Exception:  # noqa: BLE001 - 浏览器打不开时至少还能手动复制地址
-        webbrowser.open(url)
+        logger.exception("调用系统浏览器失败")
+
+    try:
+        if os.name == "nt":
+            os.startfile(url)
+            return True
+    except Exception:  # noqa: BLE001
+        logger.exception("os.startfile 打开失败")
+
+    try:
+        return bool(webbrowser.open(url))
+    except Exception:  # noqa: BLE001
+        logger.exception("webbrowser 打开失败")
+        return False
 
 
 def _wait_for_server(port: int, timeout: float = 12.0) -> bool:
@@ -86,6 +102,13 @@ def main(argv: list[str] | None = None) -> int:
         log_file = open(log_path, "a", encoding="utf-8", buffering=1)
         sys.stdout = log_file
         sys.stderr = log_file
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=sys.stderr,
+        force=True,
+    )
+    logger.info("CellTracker 启动，数据目录：%s", config.db_path.parent)
 
     url = f"http://127.0.0.1:{config.port}/"
 
@@ -130,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         import tkinter as tk
-        from tkinter import ttk
+        from tkinter import messagebox, ttk
 
         root = tk.Tk()
         root.title(APP_TITLE)
@@ -162,17 +185,37 @@ def main(argv: list[str] | None = None) -> int:
 
         ttk.Label(card, text="CellTracker", style="Title.TLabel").pack(anchor="w")
         ttk.Label(card, text="细胞培养追踪 · 本地服务已启动", style="Sub.TLabel").pack(anchor="w", pady=(4, 16))
-        ttk.Label(card, text="● 运行中", style="Status.TLabel").pack(anchor="w")
+        status_label = ttk.Label(card, text="● 运行中", style="Status.TLabel")
+        status_label.pack(anchor="w")
+
+        def open_and_report() -> None:
+            if _open_url(url):
+                status_label.config(text="● 运行中 · 已发送打开请求")
+                return
+            status_label.config(text="● 运行中 · 请手动打开下面的地址")
+            messagebox.showwarning(
+                APP_TITLE,
+                f"浏览器没有自动打开。\n\n请手动访问：\n{url}\n\n"
+                f"也可以点“复制地址”后粘贴到浏览器。",
+            )
+
+        def copy_url() -> None:
+            try:
+                root.clipboard_clear()
+                root.clipboard_append(url)
+                status_label.config(text="● 运行中 · 地址已复制")
+            except tk.TclError:
+                logger.exception("复制地址失败")
 
         url_label = ttk.Label(card, text=url, style="Url.TLabel", cursor="hand2")
         url_label.pack(anchor="w", pady=(6, 2))
-        url_label.bind("<Button-1>", lambda _event: _open_url(url))
+        url_label.bind("<Button-1>", lambda _event: open_and_report())
 
         ttk.Label(
             card,
             text=f"数据保存在：{config.db_path.parent}",
             style="Hint.TLabel",
-            wraplength=460,
+            wraplength=520,
             justify="left",
         ).pack(anchor="w", pady=(6, 16))
 
@@ -189,17 +232,20 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 os._exit(0)
 
-        ttk.Button(buttons, text="打开界面", style="Primary.TButton", command=lambda: _open_url(url)).pack(side="left")
+        ttk.Button(buttons, text="打开界面", style="Primary.TButton", command=open_and_report).pack(side="left")
+        ttk.Button(buttons, text="复制地址", command=copy_url).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="数据文件夹", command=lambda: os.startfile(config.db_path.parent)).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="退出", command=close_app).pack(side="left", padx=(8, 0))
 
         ttk.Label(
             card,
-            text="关闭此窗口会停止服务。首次启动会自动创建 data 文件夹。",
+            text="关闭此窗口会停止服务。如果“打开界面”没反应，点“复制地址”手动打开。",
             style="Hint.TLabel",
+            wraplength=520,
+            justify="left",
         ).pack(anchor="w", pady=(18, 0))
 
-        _center_window(root, 560, 330)
+        _center_window(root, 620, 380)
         root.protocol("WM_DELETE_WINDOW", close_app)
         root.mainloop()
         return 0

@@ -49,7 +49,6 @@ if exist "dist\CellTracker\data" (
     xcopy "dist\CellTracker\data" "dist\_keep_data" /E /I /Y >nul
 )
 if exist "dist\CellTracker\config.json" copy /Y "dist\CellTracker\config.json" "dist\_keep_config.json" >nul
-if exist "dist\CellTracker\使用说明.txt" copy /Y "dist\CellTracker\使用说明.txt" "dist\_keep_readme.txt" >nul
 
 echo [3/3] Packaging...
 ".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean CellTracker.spec
@@ -69,20 +68,10 @@ if exist "dist\_keep_config.json" (
 ) else (
     copy /Y "config.example.json" "dist\CellTracker\config.json" >nul
 )
-if exist "dist\_keep_readme.txt" (
-    copy /Y "dist\_keep_readme.txt" "dist\CellTracker\使用说明.txt" >nul
-    del "dist\_keep_readme.txt"
-) else (
-    > "dist\CellTracker\使用说明.txt" echo CellTracker 细胞培养追踪
-    >> "dist\CellTracker\使用说明.txt" echo.
-    >> "dist\CellTracker\使用说明.txt" echo 1. 双击 CellTracker.exe 启动。
-    >> "dist\CellTracker\使用说明.txt" echo 2. 浏览器会自动打开；如果没有打开，请访问 http://127.0.0.1:18600
-    >> "dist\CellTracker\使用说明.txt" echo 3. 关闭 CellTracker 小窗口即可停止服务。
-    >> "dist\CellTracker\使用说明.txt" echo 4. 数据保存在 exe 同目录的 data 文件夹中，请勿手动删除。
-    >> "dist\CellTracker\使用说明.txt" echo 5. 如果端口被占用，请修改 config.json 中的 port 后重新启动。
-    >> "dist\CellTracker\使用说明.txt" echo 6. 换电脑时，把整个 CellTracker 文件夹复制过去即可。
-    >> "dist\CellTracker\使用说明.txt" echo 7. 首次运行如果 Windows 提示“已保护你的电脑”，点“更多信息” → “仍要运行”。
-)
+copy /Y "packaging\使用说明.txt" "dist\CellTracker\使用说明.txt" >nul
+copy /Y "packaging\launch.ps1" "dist\CellTracker\launch.ps1" >nul
+copy /Y "packaging\start-celltracker.bat" "dist\CellTracker\start-celltracker.bat" >nul
+copy /Y "packaging\启动 CellTracker.bat" "dist\CellTracker\启动 CellTracker.bat" >nul
 
 echo.
 echo Done: dist\CellTracker\CellTracker.exe

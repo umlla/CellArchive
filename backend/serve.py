@@ -11,6 +11,8 @@ import sys
 import threading
 import webbrowser
 
+logger = logging.getLogger(__name__)
+
 from . import create_app
 from .config import APP_VERSION, Config
 
@@ -56,8 +58,24 @@ def _default_browser_kind() -> str:
     return "default"
 
 
-def open_url(url: str, config: Config) -> None:
-    """打开浏览器。
+def _spawn(command: list[str]) -> bool:
+    """启动外部程序；窗口模式下标准句柄可能无效，显式指向 DEVNULL。"""
+    try:
+        subprocess.Popen(
+            command,
+            close_fds=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except OSError:
+        logger.exception("启动浏览器失败：%s", command[0])
+        return False
+
+
+def open_url(url: str, config: Config) -> bool:
+    """打开浏览器，返回是否成功发起打开动作。
 
     Edge 作为默认浏览器时，如果系统中存在以管理员权限运行的 Edge 实例，
     普通进程直接把网址交给它会弹出「现有实例正在以提升的权限运行」。
@@ -67,21 +85,16 @@ def open_url(url: str, config: Config) -> None:
         browser = _default_browser_kind()
         if browser == "edge":
             chrome = _find_executable(CHROME_PATHS)
-            if chrome:
-                try:
-                    subprocess.Popen(
-                        [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url],
-                        close_fds=True,
-                    )
-                    return
-                except OSError:
-                    pass
+            if chrome and _spawn(
+                [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url]
+            ):
+                return True
             edge = _find_executable(EDGE_PATHS)
             if edge:
                 profile = config.db_path.parent / "browser-profile" / "edge"
                 try:
                     profile.mkdir(parents=True, exist_ok=True)
-                    subprocess.Popen(
+                    if _spawn(
                         [
                             edge,
                             f"--user-data-dir={profile}",
@@ -90,24 +103,30 @@ def open_url(url: str, config: Config) -> None:
                             "--disable-sync",
                             "--new-window",
                             url,
-                        ],
-                        close_fds=True,
-                    )
-                    return
+                        ]
+                    ):
+                        return True
                 except OSError:
-                    pass
+                    logger.exception("创建 Edge 配置目录失败")
         elif browser == "chrome":
             chrome = _find_executable(CHROME_PATHS)
-            if chrome:
-                try:
-                    subprocess.Popen(
-                        [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url],
-                        close_fds=True,
-                    )
-                    return
-                except OSError:
-                    pass
-    webbrowser.open(url)
+            if chrome and _spawn(
+                [chrome, "--new-window", "--no-first-run", "--no-default-browser-check", url]
+            ):
+                return True
+
+        # 最后用系统默认关联打开，兼容绿色版/非标准路径的浏览器
+        try:
+            os.startfile(url)
+            return True
+        except OSError:
+            logger.exception("系统默认浏览器打开失败：%s", url)
+
+    try:
+        return bool(webbrowser.open(url))
+    except Exception:  # noqa: BLE001 - 浏览器关联损坏时不要影响主程序
+        logger.exception("webbrowser 打开失败：%s", url)
+        return False
 
 
 def lan_addresses() -> list[str]:
