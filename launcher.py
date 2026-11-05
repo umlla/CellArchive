@@ -247,6 +247,10 @@ def main(argv: list[str] | None = None) -> int:
 
         _center_window(root, 620, 380)
         root.protocol("WM_DELETE_WINDOW", close_app)
+        root.lift()
+        root.focus_force()
+        root.attributes("-topmost", True)
+        root.after(1500, lambda: root.attributes("-topmost", False))
         root.mainloop()
         return 0
     except Exception:  # noqa: BLE001 - 没有图形环境时退化为控制台常驻
