@@ -8,6 +8,8 @@
 
 ![传代记录与生长曲线（演示数据）](docs/preview-curve.png)
 
+![冻存盒 9×9 视图（演示数据）](docs/preview-vials.png)
+
 ## 一、下载
 
 1. 打开 <https://github.com/umlla/celltracker>
