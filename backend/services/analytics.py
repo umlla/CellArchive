@@ -105,25 +105,33 @@ def _active_member_ids(conn: sqlite3.Connection, group_id: int) -> list[int]:
 
 
 def group_rates(conn: sqlite3.Connection, group_id: int) -> list[dict[str, Any]]:
-    """组内活跃批次最近三次 PD/天 的均值（旧版「增殖速率对比」）。"""
+    """组内每个活跃批次的增殖速度，用于比较不同细胞株的快慢。
+
+    主要指标是「整段 PD/天」：首末两条记录之间的累计 PD ÷ 跨度天数，
+    单次计数误差会被平均掉，最适合判断两株细胞增殖速度是否有差异。
+    同时给出平均 PD/天（各区间算术平均）、对应倍增时间、区间数与稳定度。
+    """
     member_ids = _active_member_ids(conn, group_id)
     if not member_ids:
         return []
     batches = fetch_all(
         conn,
         f"""
-        SELECT cb.id AS batch_id, cb.batch_name, cl.name AS cell_line
-        FROM culture_batches cb JOIN cell_lines cl ON cl.id = cb.cell_line_id
+        SELECT cb.id AS batch_id, cb.batch_name, cl.name AS cell_line, cl.id AS cell_line_id,
+               gm.sort_order
+        FROM culture_batches cb
+        JOIN cell_lines cl ON cl.id = cb.cell_line_id
+        LEFT JOIN cell_group_members gm ON gm.group_id = ? AND gm.cell_line_id = cb.cell_line_id
         WHERE cb.is_active = 1 AND cb.cell_line_id IN ({placeholders(member_ids)})
-        ORDER BY cl.name, cb.batch_name
+        ORDER BY COALESCE(gm.sort_order, 9999), cl.name, cb.batch_name
         """,
-        tuple(member_ids),
+        (group_id, *member_ids),
     )
     results: list[dict[str, Any]] = []
     for batch in batches:
         records = fetch_all(
             conn,
-            "SELECT date, pd, harvested_cells FROM culture_records WHERE batch_id = ? "
+            "SELECT date, pd, cumulative_pd FROM culture_records WHERE batch_id = ? "
             "ORDER BY date ASC, id ASC",
             (batch["batch_id"],),
         )
@@ -143,14 +151,46 @@ def group_rates(conn: sqlite3.Connection, group_id: int) -> list[dict[str, Any]]
                     })
             if current_date is not None:
                 previous_date = current_date
-        if not samples:
-            continue
-        last_three = samples[-3:]
-        average = round(sum(sample["pd_per_day"] for sample in last_three) / len(last_three), 4)
+
+        first = records[0] if records else None
+        last = records[-1] if records else None
+        span = 0
+        overall = None
+        if first and last and first["date"] and last["date"]:
+            span = (date.fromisoformat(last["date"]) - date.fromisoformat(first["date"])).days
+            if span > 0:
+                delta = float(last["cumulative_pd"] or 0) - float(first["cumulative_pd"] or 0)
+                overall = round(delta / span, 4)
+
+        average = (
+            round(sum(sample["pd_per_day"] for sample in samples) / len(samples), 4)
+            if samples else None
+        )
+        values = [sample["pd_per_day"] for sample in samples]
+        mean = sum(values) / len(values) if values else 0.0
+        # 稳定度：各区间 PD/天 的变异系数，越小说明越平稳、越可信
+        cv = None
+        if len(values) >= 2 and mean:
+            variance = sum((value - mean) ** 2 for value in values) / len(values)
+            cv = round((variance ** 0.5) / abs(mean), 3)
+
         results.append({
             **batch,
+            "overall_pd_per_day": overall,
+            "overall_doubling_hours": (
+                round(24 / overall, 2) if overall is not None and overall > 0 else None
+            ),
             "avg_pd_per_day": average,
-            "samples": last_three,
+            "avg_doubling_hours": (
+                round(24 / average, 2) if average is not None and average > 0 else None
+            ),
+            "interval_count": len(samples),
+            "span_days": span,
+            "first_date": first["date"] if first else None,
+            "last_date": last["date"] if last else None,
+            "cumulative_pd": float(last["cumulative_pd"] or 0) if last else None,
+            "cv": cv,
+            "samples": samples[-3:],
         })
     return results
 

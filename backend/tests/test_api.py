@@ -485,10 +485,21 @@ def test_group_members_order_status_and_curves(client):
         assert first_point["value"] == pytest.approx(1.0)
 
     rates = client.get(f"/api/groups/{group['id']}/rates").get_json()
-    # 只有 B 细胞有两条记录（间隔 2 天，PD=2），A 只有一条无法计算速率
-    assert {row["cell_line"] for row in rates} == {"B细胞"}
-    for row in rates:
-        assert row["avg_pd_per_day"] == pytest.approx(1.0)  # PD 2 / 2 天
+    # A、B 都有记录；B 有两条（间隔 2 天，PD=2），A 只有一条
+    by_line = {row["cell_line"]: row for row in rates}
+    assert set(by_line) == {"A细胞", "B细胞"}
+    b_rate = by_line["B细胞"]
+    assert b_rate["avg_pd_per_day"] == pytest.approx(1.0)  # PD 2 / 2 天
+    assert b_rate["overall_pd_per_day"] == pytest.approx(1.0)  # 整段累计 PD 2 / 2 天
+    assert b_rate["avg_doubling_hours"] == pytest.approx(24.0)
+    assert b_rate["interval_count"] == 1
+    assert b_rate["span_days"] == 2
+    assert b_rate["cv"] is None  # 只有一段区间，无法算变异系数
+    # A 只有一条记录：没有区间速率，但仍有首末记录（跨度 0 天）
+    a_rate = by_line["A细胞"]
+    assert a_rate["avg_pd_per_day"] is None
+    assert a_rate["interval_count"] == 0
+    assert a_rate["span_days"] == 0
 
 
 def test_group_bulk_batch_create_and_terminate(client):

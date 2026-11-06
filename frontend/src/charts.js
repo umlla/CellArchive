@@ -222,21 +222,39 @@ export function compareCurvesOption(curves, metric = 'cumulative') {
 
 export function ratesOption(rates) {
   const sorted = [...(rates || [])]
-    .filter((row) => row.avg_pd_per_day !== null && row.avg_pd_per_day !== undefined)
-    .sort((a, b) => a.avg_pd_per_day - b.avg_pd_per_day)
+    .filter((row) => row.overall_pd_per_day !== null && row.overall_pd_per_day !== undefined)
+    .sort((a, b) => a.overall_pd_per_day - b.overall_pd_per_day)
+  const byLine = {}
+  sorted.forEach((row) => {
+    byLine[row.cell_line] = row
+  })
+  const labels = sorted.map((row) => row.cell_line)
+  const fmtPdt = (row) =>
+    row.overall_doubling_hours ? `倍增时间 ${row.overall_doubling_hours} h` : '倍增时间 —'
+
   return {
     color: palette,
-    grid: { left: 120, right: 40, top: 20, bottom: 30 },
+    grid: { left: 130, right: 96, top: 20, bottom: 34 },
     tooltip: {
       trigger: 'axis',
       formatter: (params) => {
         const item = params[0]
-        return `${item.name}<br/>平均 ${Number(item.value).toFixed(3)} PD/天`
+        const row = byLine[item.name]
+        if (!row) return item.name
+        const lines = [
+          `${row.cell_line}`,
+          `整段 PD/天 ${row.overall_pd_per_day}`,
+          fmtPdt(row),
+          `平均 PD/天 ${row.avg_pd_per_day ?? '—'}`,
+          `区间数 ${row.interval_count} · 跨度 ${row.span_days} 天`,
+        ]
+        if (row.cv !== null && row.cv !== undefined) lines.push(`波动 CV ${row.cv}`)
+        return lines.join('<br/>')
       },
     },
     xAxis: {
       type: 'value',
-      name: 'PD / 天',
+      name: '整段 PD / 天',
       nameTextStyle: { color: '#9ca3af', fontSize: 11 },
       axisLine: { show: false },
       axisLabel,
@@ -244,7 +262,7 @@ export function ratesOption(rates) {
     },
     yAxis: {
       type: 'category',
-      data: sorted.map((row) => `${row.cell_line}`),
+      data: labels,
       axisLine: { show: false },
       axisLabel: { color: '#4b5563', fontSize: 11 },
       axisTick: { show: false },
@@ -252,13 +270,24 @@ export function ratesOption(rates) {
     series: [
       {
         type: 'bar',
-        barWidth: 14,
-        data: sorted.map((row) => Number(row.avg_pd_per_day.toFixed(3))),
+        barWidth: 16,
+        data: sorted.map((row) => Number(row.overall_pd_per_day.toFixed(3))),
         itemStyle: {
           borderRadius: [0, 6, 6, 0],
           color: (params) => palette[params.dataIndex % palette.length],
         },
-        label: { show: true, position: 'right', formatter: (p) => Number(p.value).toFixed(2), color: '#6b7280', fontSize: 11 },
+        label: {
+          show: true,
+          position: 'right',
+          formatter: (params) => {
+            const row = sorted[params.dataIndex]
+            return row.overall_doubling_hours
+              ? `${Number(params.value).toFixed(2)} · ${row.overall_doubling_hours}h`
+              : Number(params.value).toFixed(2)
+          },
+          color: '#6b7280',
+          fontSize: 11,
+        },
       },
     ],
   }

@@ -237,22 +237,50 @@
               </el-table-column>
             </el-table>
 
-            <div class="charts-grid section-gap">
-              <div class="panel">
-                <div class="panel-head">
-                  <div>
-                    <h2>📊 增殖速率对比</h2>
-                    <p class="sub">最近三次 PD/天 均值</p>
-                  </div>
-                </div>
-                <div class="panel-body">
-                  <Chart v-if="groupRates.length" :option="ratesOpt" height="240px" />
-                  <div v-else class="empty-hint" style="padding: 26px">
-                    <span class="icon">📊</span>组内还没有足够记录计算速率
-                  </div>
+            <div class="panel section-gap">
+              <div class="panel-head">
+                <div>
+                  <h2>📊 增殖速度对比</h2>
+                  <p class="sub">
+                    按整段 PD/天 排序：首末两条记录之间的累计 PD ÷ 跨度天数，比单次 PD/天 更稳定。
+                    柱子右侧是倍增时间；PD/天 差 20% 以上才算明显差异。
+                  </p>
                 </div>
               </div>
+              <div class="panel-body">
+                <Chart v-if="rateRowsSorted.length" :option="ratesOpt" :height="`${Math.max(180, rateRowsSorted.length * 42 + 40)}px`" />
+                <div v-else class="empty-hint" style="padding: 26px">
+                  <span class="icon">📊</span>组内还没有足够记录计算速率
+                </div>
+                <el-table v-if="rateRowsSorted.length" :data="rateRowsSorted" size="small" style="margin-top: 10px" max-height="300">
+                  <el-table-column prop="cell_line" label="细胞株" min-width="130" />
+                  <el-table-column prop="batch_name" label="批次" min-width="150" show-overflow-tooltip />
+                  <el-table-column label="整段 PD/天" width="104" align="right">
+                    <template #default="{ row }"><b>{{ row.overall_pd_per_day ?? '—' }}</b></template>
+                  </el-table-column>
+                  <el-table-column label="整段倍增时间" width="112" align="right">
+                    <template #default="{ row }">
+                      {{ row.overall_doubling_hours === null ? '—' : `${row.overall_doubling_hours} h` }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="平均 PD/天" width="98" align="right">
+                    <template #default="{ row }">{{ row.avg_pd_per_day ?? '—' }}</template>
+                  </el-table-column>
+                  <el-table-column label="波动 CV" width="82" align="right">
+                    <template #default="{ row }">{{ row.cv ?? '—' }}</template>
+                  </el-table-column>
+                  <el-table-column label="区间数" width="74" align="center">
+                    <template #default="{ row }">{{ row.interval_count }}</template>
+                  </el-table-column>
+                  <el-table-column label="跨度" width="72" align="right">
+                    <template #default="{ row }">{{ row.span_days }} 天</template>
+                  </el-table-column>
+                  <el-table-column prop="last_date" label="最近记录" width="104" />
+                </el-table>
+              </div>
+            </div>
 
+            <div class="charts-grid section-gap">
               <div class="panel">
                 <div class="panel-head" style="align-items: flex-start">
                   <div>
@@ -714,6 +742,11 @@ const currentGroupName = computed(
   () => groups.value.find((group) => group.id === selectedGroupId.value)?.group_name || '',
 )
 
+const rateRowsSorted = computed(() =>
+  [...groupRates.value]
+    .filter((row) => row.overall_pd_per_day !== null && row.overall_pd_per_day !== undefined)
+    .sort((a, b) => b.overall_pd_per_day - a.overall_pd_per_day),
+)
 const ratesOpt = computed(() => ratesOption(groupRates.value))
 const curvesOpt = computed(() => groupCurvesOption(curves.value))
 
