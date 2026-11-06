@@ -98,6 +98,7 @@ const viewKey = ref(0)
 const menu = [
   { path: '/', title: '在养细胞', icon: 'Odometer' },
   { path: '/records', title: '历史记录', icon: 'DataLine' },
+  { path: '/compare', title: '生长曲线对比', icon: 'TrendCharts' },
   { path: '/batches/new', title: '新建批次', icon: 'MagicStick' },
   { path: '/vials', title: '冻存管', icon: 'Box' },
   { path: '/lines', title: '细胞株', icon: 'Collection' },

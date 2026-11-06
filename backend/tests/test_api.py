@@ -102,6 +102,62 @@ def test_batch_and_record_pd_flow(client):
     }).status_code == 409
 
 
+def test_compare_curves_across_cell_lines(client):
+    line_a = create_line(client, "HeLa")
+    line_b = create_line(client, "A549")
+    line_c = create_line(client, "MCF-7")
+    batch_a = create_batch(client, line_a["id"])
+    batch_b = create_batch(client, line_b["id"])
+    batch_c = create_batch(client, line_c["id"], revival_date="2026-03-01")
+
+    add_record(client, batch_a["id"], date="2026-02-02", harvested_cells=4.0)
+    add_record(client, batch_a["id"], date="2026-02-04", harvested_cells=8.0, next_passage_days=0)
+    add_record(client, batch_b["id"], date="2026-02-03", harvested_cells=8.0)
+    add_record(client, batch_c["id"], date="2026-02-05", harvested_cells=16.0)
+
+    # 只选两个细胞株，第三个不应出现
+    response = client.get(f"/api/compare/curves?line_ids={line_a['id']},{line_b['id']}")
+    assert response.status_code == 200
+    body = response.get_json()
+    names = [item["cell_line"] for item in body["series"]]
+    assert names == ["HeLa", "A549"]
+    assert body["dates"] == ["2026-02-02", "2026-02-03", "2026-02-04"]
+    assert body["series"][0]["points"][0]["value"] == pytest.approx(2.0)
+    assert body["series"][0]["points"][0]["day"] == 0
+    assert body["series"][0]["points"][1]["day"] == 2
+
+    # 按培养天数对齐时，每个点带 day 字段
+    elapsed = client.get(
+        f"/api/compare/curves?line_ids={line_a['id']},{line_c['id']}&basis=elapsed"
+    ).get_json()
+    assert elapsed["basis"] == "elapsed"
+    assert elapsed["series"][1]["points"][0]["day"] == 0
+
+    # 标准化：以 2026-02-04 为起点，HeLa 之后没有更晚记录 -> 跳过
+    normalized = client.get(
+        f"/api/compare/curves?line_ids={line_a['id']},{line_b['id']}"
+        f"&normalize=true&start_date=2026-02-02"
+    ).get_json()
+    assert normalized["normalize"] is True
+    hela = normalized["series"][0]
+    assert hela["points"][0]["value"] == pytest.approx(1.0)
+    assert hela["points"][1]["value"] == pytest.approx(2.0)
+
+    # 缺少起始日期 / 没选细胞株时给出明确错误
+    assert client.get(f"/api/compare/curves?line_ids={line_a['id']}&normalize=true").status_code == 400
+    assert client.get("/api/compare/curves").status_code == 400
+
+    # 默认不包含已终止批次，显式开启后才包含
+    client.post(f"/api/batches/{batch_b['id']}/terminate", json={"reason": "其他"})
+    default_body = client.get(f"/api/compare/curves?line_ids={line_b['id']}").get_json()
+    assert default_body["series"] == []
+    ended_body = client.get(
+        f"/api/compare/curves?line_ids={line_b['id']}&include_ended=true"
+    ).get_json()
+    assert len(ended_body["series"]) == 1
+    assert ended_body["series"][0]["ended"] is True
+
+
 def test_restore_terminated_batch(client):
     line = create_line(client)
     batch = create_batch(client, line["id"])

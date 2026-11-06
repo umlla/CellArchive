@@ -138,6 +138,62 @@ export function groupCurvesOption(curves) {
   }
 }
 
+export function compareCurvesOption(curves) {
+  const basis = curves?.basis || 'date'
+  const series = (curves?.series || []).map((item, index) => ({
+    name: item.cell_line,
+    type: 'line',
+    smooth: true,
+    symbolSize: 5,
+    connectNulls: true,
+    data: item.points.map((point) => [basis === 'elapsed' ? point.day : point.date, point.value]),
+    lineStyle: {
+      width: item.ended ? 1.6 : 2.4,
+      type: item.ended ? 'dashed' : 'solid',
+      color: palette[index % palette.length],
+    },
+    itemStyle: { color: palette[index % palette.length] },
+  }))
+  const dates = curves?.dates || []
+  const elapsed = (curves?.series || []).flatMap((item) => item.points.map((point) => point.day))
+  const maxDay = elapsed.length ? Math.max(...elapsed) : 0
+  const elapsedAxis = Array.from({ length: maxDay + 1 }, (_, index) => index)
+
+  return {
+    color: palette,
+    grid: { left: 58, right: 24, top: 56, bottom: 40 },
+    tooltip: { trigger: 'axis' },
+    legend: {
+      top: 6,
+      type: 'scroll',
+      icon: 'roundRect',
+      itemWidth: 10,
+      itemHeight: 10,
+      textStyle: { color: '#4b5563', fontSize: 11 },
+    },
+    xAxis: {
+      type: 'category',
+      data: basis === 'elapsed' ? elapsedAxis : dates,
+      boundaryGap: false,
+      name: basis === 'elapsed' ? '距首条记录（天）' : '',
+      nameLocation: 'end',
+      nameTextStyle: { color: '#9ca3af', fontSize: 11 },
+      axisLine,
+      axisLabel,
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      name: curves?.normalize ? '相对 PD' : '累计 PD',
+      nameTextStyle: { color: '#9ca3af', fontSize: 11 },
+      axisLine: { show: false },
+      axisLabel,
+      splitLine,
+    },
+    series,
+  }
+}
+
 export function ratesOption(rates) {
   const sorted = [...(rates || [])]
     .filter((row) => row.avg_pd_per_day !== null && row.avg_pd_per_day !== undefined)

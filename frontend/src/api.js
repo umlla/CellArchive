@@ -116,6 +116,10 @@ export const groupApi = {
     `/api/groups/${id}/export?include_all=${includeAll ? 'true' : 'false'}`,
 }
 
+export const compareApi = {
+  curves: (params) => http.get('/compare/curves', { params }),
+}
+
 export function downloadUrl(url) {
   const anchor = document.createElement('a')
   anchor.href = url

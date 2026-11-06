@@ -484,6 +484,25 @@ def dashboard():
     return jsonify(analytics.dashboard(get_db()))
 
 
+@api_bp.get("/compare/curves")
+def compare_curves():
+    raw_lines = request.args.get("line_ids", "")
+    line_ids = [int(part) for part in raw_lines.split(",") if part.strip().isdigit()]
+    if not line_ids:
+        raise ValidationError("请至少选择一个细胞株")
+    raw_batches = request.args.get("batch_ids", "")
+    batch_ids = [int(part) for part in raw_batches.split(",") if part.strip().isdigit()]
+    return jsonify(analytics.compare_curves(
+        get_db(),
+        line_ids,
+        batch_ids=batch_ids or None,
+        include_ended=_bool_arg("include_ended", False),
+        normalize=_bool_arg("normalize", False),
+        start_date=request.args.get("start_date"),
+        basis=request.args.get("basis", "date"),
+    ))
+
+
 # --------------------------------------------------------------------------
 # 维护：体检 / 重算 / 备份 / 恢复 / 导入
 # --------------------------------------------------------------------------

@@ -155,6 +155,119 @@ def group_rates(conn: sqlite3.Connection, group_id: int) -> list[dict[str, Any]]
     return results
 
 
+def compare_curves(
+    conn: sqlite3.Connection,
+    line_ids: list[int],
+    *,
+    batch_ids: list[int] | None = None,
+    include_ended: bool = False,
+    normalize: bool = False,
+    start_date: str | None = None,
+    basis: str = "date",
+) -> dict[str, Any]:
+    """任选细胞株的生长曲线对比。
+
+    - line_ids：要对比的细胞株，按传入顺序排列
+    - batch_ids：可只取指定批次；为空时取这些细胞株的批次（默认仅活跃批次）
+    - normalize：以各批次在 start_date 的累计 PD 为基准做归一化，便于比较增殖快慢
+    - basis：date 按日期对齐；elapsed 按「距批次首条记录的天数」对齐
+    """
+    if not line_ids:
+        return {"series": [], "dates": [], "ended_batches": [], "skipped": [],
+                "normalize": normalize, "start_date": start_date, "basis": basis}
+    if normalize and not start_date:
+        raise ValidationError("标准化模式必须提供起始日期")
+    if basis not in ("date", "elapsed"):
+        raise ValidationError("basis 必须是 date 或 elapsed")
+
+    rows = fetch_all(
+        conn,
+        f"""
+        SELECT cb.id AS batch_id, cb.batch_name, cb.revival_date, cb.is_active,
+               cl.id AS cell_line_id, cl.name AS cell_line
+        FROM culture_batches cb JOIN cell_lines cl ON cl.id = cb.cell_line_id
+        WHERE cl.id IN ({placeholders(line_ids)})
+        ORDER BY cl.name, cb.revival_date DESC, cb.id DESC
+        """,
+        tuple(line_ids),
+    )
+    wanted = {int(value) for value in (batch_ids or [])}
+    if wanted:
+        candidates = [row for row in rows if int(row["batch_id"]) in wanted]
+    else:
+        candidates = [row for row in rows if include_ended or int(row["is_active"])]
+
+    order = {int(line_id): index for index, line_id in enumerate(line_ids)}
+    candidates.sort(key=lambda row: (order.get(int(row["cell_line_id"]), 9999),
+                                     row["revival_date"] or "", row["batch_id"]))
+
+    series: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    all_dates: set[str] = set()
+
+    for batch in candidates:
+        records = fetch_all(
+            conn,
+            "SELECT date, passage, pd, cumulative_pd, harvested_cells FROM culture_records "
+            "WHERE batch_id = ? ORDER BY date ASC, id ASC",
+            (batch["batch_id"],),
+        )
+        if not records:
+            skipped.append({"batch_id": batch["batch_id"], "name": batch["batch_name"],
+                            "reason": "没有传代记录"})
+            continue
+        for record in records:
+            all_dates.add(record["date"])
+
+        first_date = date.fromisoformat(records[0]["date"])
+        points = [
+            {
+                "date": record["date"],
+                "day": (date.fromisoformat(record["date"]) - first_date).days,
+                "passage": record["passage"],
+                "value": record["cumulative_pd"],
+                "cumulative_pd": record["cumulative_pd"],
+                "pd": record["pd"],
+                "harvested_cells": record["harvested_cells"],
+            }
+            for record in records
+        ]
+
+        if normalize:
+            exact = next((point for point in points if point["date"] == start_date), None)
+            if exact is None:
+                skipped.append({"batch_id": batch["batch_id"], "name": batch["batch_name"],
+                                "reason": f"{start_date} 当天没有记录"})
+                continue
+            base = float(exact["cumulative_pd"] or 0)
+            if base == 0:
+                skipped.append({"batch_id": batch["batch_id"], "name": batch["batch_name"],
+                                "reason": "起始累计 PD 为 0，无法标准化"})
+                continue
+            points = [point for point in points if point["date"] >= start_date]
+            for point in points:
+                point["value"] = round(float(point["cumulative_pd"]) / base, 3)
+
+        series.append({
+            "batch_id": batch["batch_id"],
+            "batch_name": batch["batch_name"],
+            "cell_line": batch["cell_line"],
+            "cell_line_id": batch["cell_line_id"],
+            "ended": not bool(batch["is_active"]),
+            "name": batch["batch_name"],
+            "points": points,
+        })
+
+    return {
+        "series": series,
+        "dates": sorted(all_dates),
+        "normalize": normalize,
+        "start_date": start_date,
+        "basis": basis,
+        "skipped": skipped,
+    }
+
+
 def group_curves(
     conn: sqlite3.Connection,
     group_id: int,
