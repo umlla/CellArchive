@@ -126,6 +126,18 @@ def test_compare_curves_across_cell_lines(client):
     assert body["series"][0]["points"][0]["day"] == 0
     assert body["series"][0]["points"][1]["day"] == 2
 
+    # PD/天 与倍增时间：首条记录没有上一次接种，无法计算；第二条 pd=2、间隔 2 天
+    hela_points = body["series"][0]["points"]
+    assert hela_points[0]["pd_per_day"] is None
+    assert hela_points[0]["doubling_hours"] is None
+    assert hela_points[1]["pd_per_day"] == pytest.approx(1.0)
+    assert hela_points[1]["doubling_hours"] == pytest.approx(24.0)
+    hela_series = body["series"][0]
+    assert hela_series["avg_pd_per_day"] == pytest.approx(1.0)
+    assert hela_series["avg_doubling_hours"] == pytest.approx(24.0)
+    assert hela_series["overall_pd_per_day"] == pytest.approx(1.0)
+    assert hela_series["overall_doubling_hours"] == pytest.approx(24.0)
+
     # 按培养天数对齐时，每个点带 day 字段
     elapsed = client.get(
         f"/api/compare/curves?line_ids={line_a['id']},{line_c['id']}&basis=elapsed"

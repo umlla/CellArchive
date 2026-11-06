@@ -171,9 +171,14 @@ def compare_curves(
     - batch_ids：可只取指定批次；为空时取这些细胞株的批次（默认仅活跃批次）
     - normalize：以各批次在 start_date 的累计 PD 为基准做归一化，便于比较增殖快慢
     - basis：date 按日期对齐；elapsed 按「距批次首条记录的天数」对齐
+
+    每个点同时给出：
+    - pd_per_day：本次 PD ÷ 距上一条记录的天数
+    - doubling_hours：倍增时间 = 24 ÷ PD/天
+    批次级再给出平均 PD/天、平均倍增时间，以及整段时间的累计 PD/天。
     """
     if not line_ids:
-        return {"series": [], "dates": [], "ended_batches": [], "skipped": [],
+        return {"series": [], "dates": [], "skipped": [],
                 "normalize": normalize, "start_date": start_date, "basis": basis}
     if normalize and not start_date:
         raise ValidationError("标准化模式必须提供起始日期")
@@ -220,18 +225,36 @@ def compare_curves(
             all_dates.add(record["date"])
 
         first_date = date.fromisoformat(records[0]["date"])
-        points = [
-            {
+        points = []
+        previous: dict[str, Any] | None = None
+        for record in records:
+            record_date = date.fromisoformat(record["date"])
+            day = (record_date - first_date).days
+            interval = (record_date - date.fromisoformat(previous["date"])).days if previous else None
+            single_pd = float(record["pd"] or 0)
+            # 本次 PD / 间隔天数；首次记录没有「上一次接种」，无法计算
+            pd_per_day = (
+                round(single_pd / interval, 4)
+                if previous is not None and interval and interval > 0
+                else None
+            )
+            # 倍增时间（小时）= 24 / (PD/天)；PD/天 为 0 或负数时不计算
+            doubling_hours = (
+                round(24 / pd_per_day, 2) if pd_per_day is not None and pd_per_day > 0 else None
+            )
+            points.append({
                 "date": record["date"],
-                "day": (date.fromisoformat(record["date"]) - first_date).days,
+                "day": day,
+                "interval_days": interval,
                 "passage": record["passage"],
                 "value": record["cumulative_pd"],
                 "cumulative_pd": record["cumulative_pd"],
                 "pd": record["pd"],
+                "pd_per_day": pd_per_day,
+                "doubling_hours": doubling_hours,
                 "harvested_cells": record["harvested_cells"],
-            }
-            for record in records
-        ]
+            })
+            previous = record
 
         if normalize:
             exact = next((point for point in points if point["date"] == start_date), None)
@@ -248,6 +271,15 @@ def compare_curves(
             for point in points:
                 point["value"] = round(float(point["cumulative_pd"]) / base, 3)
 
+        # 批次级汇总：整段时间的平均 PD/天 与平均倍增时间
+        rates = [point["pd_per_day"] for point in points if point["pd_per_day"] is not None]
+        span = points[-1]["day"] - points[0]["day"] if len(points) > 1 else 0
+        avg_pd_per_day = round(sum(rates) / len(rates), 4) if rates else None
+        if span > 0 and points:
+            overall = (float(points[-1]["cumulative_pd"] or 0) - float(points[0]["cumulative_pd"] or 0)) / span
+        else:
+            overall = None
+
         series.append({
             "batch_id": batch["batch_id"],
             "batch_name": batch["batch_name"],
@@ -256,6 +288,16 @@ def compare_curves(
             "ended": not bool(batch["is_active"]),
             "name": batch["batch_name"],
             "points": points,
+            "avg_pd_per_day": avg_pd_per_day,
+            "avg_doubling_hours": (
+                round(24 / avg_pd_per_day, 2)
+                if avg_pd_per_day is not None and avg_pd_per_day > 0
+                else None
+            ),
+            "overall_pd_per_day": round(overall, 4) if overall is not None else None,
+            "overall_doubling_hours": (
+                round(24 / overall, 2) if overall is not None and overall > 0 else None
+            ),
         })
 
     return {

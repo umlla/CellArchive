@@ -138,31 +138,66 @@ export function groupCurvesOption(curves) {
   }
 }
 
-export function compareCurvesOption(curves) {
+export const compareMetrics = [
+  { value: 'cumulative', label: '累计 PD' },
+  { value: 'pd_per_day', label: 'PD/天' },
+  { value: 'doubling_hours', label: '倍增时间（h）' },
+  { value: 'elapsed_pd', label: 'PD/天（累计）' },
+]
+
+export function compareCurvesOption(curves, metric = 'cumulative') {
   const basis = curves?.basis || 'date'
-  const series = (curves?.series || []).map((item, index) => ({
-    name: item.cell_line,
-    type: 'line',
-    smooth: true,
-    symbolSize: 5,
-    connectNulls: true,
-    data: item.points.map((point) => [basis === 'elapsed' ? point.day : point.date, point.value]),
-    lineStyle: {
-      width: item.ended ? 1.6 : 2.4,
-      type: item.ended ? 'dashed' : 'solid',
-      color: palette[index % palette.length],
-    },
-    itemStyle: { color: palette[index % palette.length] },
-  }))
-  const dates = curves?.dates || []
+  const isRate = metric === 'pd_per_day' || metric === 'doubling_hours'
+  const xKey = basis === 'elapsed' ? 'day' : 'date'
+
+  const series = (curves?.series || []).map((item, index) => {
+    const color = palette[index % palette.length]
+    const data = item.points.map((point) => {
+      let value
+      if (metric === 'pd_per_day') value = point.pd_per_day
+      else if (metric === 'doubling_hours') value = point.doubling_hours
+      else if (metric === 'elapsed_pd') value = point.elapsed_pd
+      else value = point.value
+      return [point[xKey], value === null || value === undefined ? null : value]
+    })
+    return {
+      name: item.cell_line,
+      type: isRate ? 'bar' : 'line',
+      barMaxWidth: 14,
+      smooth: true,
+      symbolSize: 5,
+      connectNulls: false,
+      data,
+      lineStyle: {
+        width: item.ended ? 1.6 : 2.4,
+        type: item.ended ? 'dashed' : 'solid',
+        color,
+      },
+      itemStyle: { color },
+    }
+  })
+
+  const allDates = new Set(curves?.dates || [])
+  ;(curves?.series || []).forEach((item) => item.points.forEach((point) => allDates.add(point.date)))
+  const dates = [...allDates].sort()
   const elapsed = (curves?.series || []).flatMap((item) => item.points.map((point) => point.day))
   const maxDay = elapsed.length ? Math.max(...elapsed) : 0
   const elapsedAxis = Array.from({ length: maxDay + 1 }, (_, index) => index)
 
+  const yName = {
+    cumulative: curves?.normalize ? '相对 PD' : '累计 PD',
+    pd_per_day: 'PD / 天',
+    doubling_hours: '倍增时间（小时）',
+    elapsed_pd: '累计 PD',
+  }[metric] || ''
+
   return {
     color: palette,
     grid: { left: 58, right: 24, top: 56, bottom: 40 },
-    tooltip: { trigger: 'axis' },
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (value) => (value === null || value === undefined ? '—' : value),
+    },
     legend: {
       top: 6,
       type: 'scroll',
@@ -174,7 +209,7 @@ export function compareCurvesOption(curves) {
     xAxis: {
       type: 'category',
       data: basis === 'elapsed' ? elapsedAxis : dates,
-      boundaryGap: false,
+      boundaryGap: isRate,
       name: basis === 'elapsed' ? '距首条记录（天）' : '',
       nameLocation: 'end',
       nameTextStyle: { color: '#9ca3af', fontSize: 11 },
@@ -184,7 +219,7 @@ export function compareCurvesOption(curves) {
     },
     yAxis: {
       type: 'value',
-      name: curves?.normalize ? '相对 PD' : '累计 PD',
+      name: yName,
       nameTextStyle: { color: '#9ca3af', fontSize: 11 },
       axisLine: { show: false },
       axisLabel,

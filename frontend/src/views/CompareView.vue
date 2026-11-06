@@ -45,6 +45,11 @@
               <el-radio-button value="date">按日期</el-radio-button>
               <el-radio-button value="elapsed">按培养天数</el-radio-button>
             </el-radio-group>
+            <el-radio-group v-model="metric" size="small">
+              <el-radio-button v-for="item in compareMetrics" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </el-radio-button>
+            </el-radio-group>
             <el-button size="small" type="primary" :disabled="!selectedLineIds.length" :loading="loading" @click="loadCurves">
               刷新
             </el-button>
@@ -77,11 +82,19 @@
               <el-table-column label="培养天数" width="90" align="right">
                 <template #default="{ row }">{{ row.days }}</template>
               </el-table-column>
-              <el-table-column label="累计 PD" width="90" align="right">
+              <el-table-column label="累计 PD" width="86" align="right">
                 <template #default="{ row }">{{ fmtNum(row.cumulative_pd) }}</template>
               </el-table-column>
-              <el-table-column label="平均 PD/天" width="104" align="right">
-                <template #default="{ row }">{{ row.pd_per_day }}</template>
+              <el-table-column label="平均 PD/天" width="98" align="right">
+                <template #default="{ row }">{{ row.avg_pd_per_day }}</template>
+              </el-table-column>
+              <el-table-column label="平均倍增时间" width="110" align="right">
+                <template #default="{ row }">
+                  {{ row.avg_doubling_hours === null ? '—' : `${row.avg_doubling_hours} h` }}
+                </template>
+              </el-table-column>
+              <el-table-column label="整段 PD/天" width="100" align="right">
+                <template #default="{ row }">{{ row.overall_pd_per_day ?? '—' }}</template>
               </el-table-column>
               <el-table-column label="状态" width="80" align="center">
                 <template #default="{ row }">
@@ -102,7 +115,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { compareApi, lineApi } from '../api'
-import { compareCurvesOption } from '../charts'
+import { compareCurvesOption, compareMetrics } from '../charts'
 import { fmtNum } from '../utils'
 import Chart from '../components/Chart.vue'
 
@@ -114,6 +127,7 @@ const includeEnded = ref(false)
 const normalize = ref(false)
 const startDate = ref(null)
 const basis = ref('date')
+const metric = ref('cumulative')
 const loading = ref(false)
 const curves = ref({ series: [], dates: [], skipped: [], normalize: false, basis: 'date' })
 
@@ -125,15 +139,14 @@ const filteredLines = computed(() => {
   return [...list].sort((a, b) => (b.active_batch_count || 0) - (a.active_batch_count || 0))
 })
 
-const chartOption = computed(() => compareCurvesOption(curves.value))
+const chartOption = computed(() => compareCurvesOption(curves.value, metric.value))
 
 const summaryRows = computed(() =>
   (curves.value.series || []).map((item) => {
     const points = item.points || []
     const first = points[0]
     const last = points[points.length - 1]
-    const days = first && last ? Math.max(1, last.day) : 0
-    const delta = last && first ? Number(last.cumulative_pd || 0) - Number(first.cumulative_pd || 0) : 0
+    const days = first && last ? Math.max(0, last.day) : 0
     return {
       cell_line: item.cell_line,
       batch_name: item.batch_name,
@@ -142,7 +155,9 @@ const summaryRows = computed(() =>
       last_date: last?.date || '—',
       days,
       cumulative_pd: last?.cumulative_pd ?? null,
-      pd_per_day: days ? (delta / days).toFixed(2) : '—',
+      avg_pd_per_day: item.avg_pd_per_day ?? '—',
+      avg_doubling_hours: item.avg_doubling_hours ?? null,
+      overall_pd_per_day: item.overall_pd_per_day ?? null,
       ended: item.ended,
     }
   }),
