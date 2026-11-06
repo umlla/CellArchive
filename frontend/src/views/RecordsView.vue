@@ -36,10 +36,10 @@
               <template #default="{ row }"><el-input-number v-model="row.harvested_cells" :min="0" :precision="2" size="small" controls-position="right" style="width: 100%" /></template>
             </el-table-column>
             <el-table-column label="盘数" width="80">
-              <template #default="{ row }"><el-input-number v-model="row.inoculum_dishes" :min="1" :step="1" size="small" controls-position="right" style="width: 100%" /></template>
+              <template #default="{ row }"><el-input-number v-model="row.inoculum_dishes" :min="1" :step="1" :precision="0" size="small" controls-position="right" style="width: 100%" /></template>
             </el-table-column>
             <el-table-column label="每盘" width="108">
-              <template #default="{ row }"><el-input-number v-model="row.per_dish_cells" :min="0" :precision="2" size="small" controls-position="right" style="width: 100%" /></template>
+              <template #default="{ row }"><el-input-number v-model="row.per_dish_cells" :min="0" :precision="2" :step="0.01" size="small" controls-position="right" style="width: 100%" /></template>
             </el-table-column>
             <el-table-column label="状态" width="92">
               <template #default="{ row }">
@@ -146,10 +146,11 @@
           <el-input-number v-model="editForm.harvested_cells" :min="0" :step="0.1" :precision="2" style="width: 100%" />
         </el-form-item>
         <el-form-item label="种下盘数">
-          <el-input-number v-model="editForm.inoculum_dishes" :min="1" :step="1" style="width: 100%" />
+          <el-input-number v-model="editForm.inoculum_dishes" :min="1" :step="1" :precision="0" style="width: 100%" />
         </el-form-item>
         <el-form-item label="每盘细胞数">
-          <el-input-number v-model="editForm.per_dish_cells" :min="0" :step="0.1" :precision="2" style="width: 100%" />
+          <el-input-number v-model="editForm.per_dish_cells" :min="0" :step="0.01" :precision="2" style="width: 100%" />
+          <div class="form-tip">填 8 就是 8，不会被自动改成 8.01</div>
         </el-form-item>
         <el-form-item label="细胞状态">
           <el-select v-model="editForm.status" style="width: 100%">

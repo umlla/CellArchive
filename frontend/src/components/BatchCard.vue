@@ -159,10 +159,11 @@
           <el-input-number v-model="editForm.harvested_cells" :min="0" :step="0.1" :precision="2" style="width: 100%" />
         </el-form-item>
         <el-form-item label="种下盘数">
-          <el-input-number v-model="editForm.inoculum_dishes" :min="1" :step="1" style="width: 100%" />
+          <el-input-number v-model="editForm.inoculum_dishes" :min="1" :step="1" :precision="0" style="width: 100%" />
         </el-form-item>
         <el-form-item label="每盘细胞数">
-          <el-input-number v-model="editForm.per_dish_cells" :min="0" :step="0.1" :precision="2" style="width: 100%" />
+          <el-input-number v-model="editForm.per_dish_cells" :min="0" :step="0.01" :precision="2" style="width: 100%" />
+          <div class="form-tip">填 8 就是 8，不会被自动改成 8.01</div>
         </el-form-item>
         <el-form-item label="细胞状态">
           <el-select v-model="editForm.status" style="width: 100%">

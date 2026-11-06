@@ -70,12 +70,20 @@
             </el-table-column>
             <el-table-column label="盘数" width="78">
               <template #default="{ row }">
-                <el-input-number v-model="row.inoculum_dishes" :min="1" :step="1" size="small" controls-position="right" style="width: 100%" />
+                <el-input-number v-model="row.inoculum_dishes" :min="1" :step="1" :precision="0" size="small" controls-position="right" style="width: 100%" />
               </template>
             </el-table-column>
             <el-table-column label="每盘细胞数" width="108">
               <template #default="{ row }">
-                <el-input-number v-model="row.per_dish_cells" :min="0" :precision="2" size="small" controls-position="right" style="width: 100%" />
+                <el-input-number
+                  v-model="row.per_dish_cells"
+                  :min="0"
+                  :precision="2"
+                  :step="0.01"
+                  size="small"
+                  controls-position="right"
+                  style="width: 100%"
+                />
               </template>
             </el-table-column>
             <el-table-column label="状态" width="92">
@@ -165,10 +173,11 @@
                 <el-input-number v-model="singleForm.harvested_cells" :min="0" :precision="2" :step="0.1" style="width: 100%" />
               </el-form-item>
               <el-form-item label="种下盘数">
-                <el-input-number v-model="singleForm.inoculum_dishes" :min="1" :step="1" style="width: 100%" />
+                <el-input-number v-model="singleForm.inoculum_dishes" :min="1" :step="1" :precision="0" style="width: 100%" />
               </el-form-item>
               <el-form-item label="每盘细胞数">
-                <el-input-number v-model="singleForm.per_dish_cells" :min="0" :precision="2" :step="0.1" style="width: 100%" />
+                <el-input-number v-model="singleForm.per_dish_cells" :min="0" :precision="2" :step="0.01" style="width: 100%" />
+                <div class="form-tip">用箭头微调时按 0.01 递增，不会自动跳到小数</div>
               </el-form-item>
               <el-form-item label="细胞状态">
                 <el-select v-model="singleForm.status" style="width: 100%">
