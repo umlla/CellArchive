@@ -37,8 +37,17 @@
           <span class="small muted">已选 {{ selectedLineIds.length }} 个细胞株</span>
           <div class="row" style="margin-left: auto; gap: 14px; flex-wrap: wrap">
             <el-checkbox v-model="includeEnded" @change="loadCurves">包含已终止批次</el-checkbox>
-            <el-checkbox v-model="normalize" @change="onNormalizeChange">标准化（按起始 PD）</el-checkbox>
-            <el-select v-if="normalize" v-model="startDate" size="small" style="width: 150px" @change="loadCurves">
+            <el-checkbox v-model="normalize" @change="onNormalizeChange">
+              标准化（扩增倍数 2^ΔPD）
+            </el-checkbox>
+            <el-select
+              v-if="normalize"
+              v-model="startDate"
+              placeholder="基准日期"
+              size="small"
+              style="width: 150px"
+              @change="loadCurves"
+            >
               <el-option v-for="day in curves.dates || []" :key="day" :label="day" :value="day" />
             </el-select>
             <el-radio-group v-model="basis" size="small" @change="loadCurves">
@@ -63,6 +72,11 @@
           <Chart v-if="curves.series?.length" :option="chartOption" height="440px" />
           <div v-else class="empty-hint" style="padding: 60px 20px">
             <span class="icon">📈</span>{{ loading ? '加载中…' : '所选细胞株还没有可用的传代记录' }}
+          </div>
+
+          <div v-if="normalize" class="small faint" style="margin-top: 8px">
+            标准化：以各批次在 {{ startDate || '基准日' }} 或之后最近一条记录为基准，
+            纵轴为相对基准点的扩增倍数 2^(ΔPD)，起点均为 1 倍，可直接比较增速。
           </div>
 
           <div v-if="curves.skipped?.length" class="small faint" style="margin-top: 8px">

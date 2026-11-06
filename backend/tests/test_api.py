@@ -145,7 +145,7 @@ def test_compare_curves_across_cell_lines(client):
     assert elapsed["basis"] == "elapsed"
     assert elapsed["series"][1]["points"][0]["day"] == 0
 
-    # 标准化：以 2026-02-04 为起点，HeLa 之后没有更晚记录 -> 跳过
+    # 标准化 = 2^(ΔPD)：HeLa 基准日累计 PD 2，次日 4 -> 扩增 4 倍
     normalized = client.get(
         f"/api/compare/curves?line_ids={line_a['id']},{line_b['id']}"
         f"&normalize=true&start_date=2026-02-02"
@@ -153,7 +153,29 @@ def test_compare_curves_across_cell_lines(client):
     assert normalized["normalize"] is True
     hela = normalized["series"][0]
     assert hela["points"][0]["value"] == pytest.approx(1.0)
-    assert hela["points"][1]["value"] == pytest.approx(2.0)
+    assert hela["points"][1]["value"] == pytest.approx(4.0)
+    assert hela["points"][1]["fold"] == pytest.approx(4.0)
+    # 基准点重新计为第 0 天
+    assert hela["points"][0]["day"] == 0
+    assert hela["points"][1]["day"] == 2
+
+    # 起始日当天没有记录时，向后找最近一条作为基准（不再整批丢弃）
+    shifted = client.get(
+        f"/api/compare/curves?line_ids={line_a['id']},{line_b['id']}"
+        f"&normalize=true&start_date=2026-02-03"
+    ).get_json()
+    names = [item["cell_line"] for item in shifted["series"]]
+    assert names == ["HeLa", "A549"]
+    a549 = shifted["series"][1]
+    assert a549["points"][0]["date"] == "2026-02-03"
+    assert a549["points"][0]["value"] == pytest.approx(1.0)
+
+    # 起始日晚于全部记录时跳过并给出原因
+    late = client.get(
+        f"/api/compare/curves?line_ids={line_a['id']}&normalize=true&start_date=2026-12-01"
+    ).get_json()
+    assert late["series"] == []
+    assert "没有记录" in late["skipped"][0]["reason"]
 
     # 缺少起始日期 / 没选细胞株时给出明确错误
     assert client.get(f"/api/compare/curves?line_ids={line_a['id']}&normalize=true").status_code == 400
@@ -476,6 +498,7 @@ def test_group_members_order_status_and_curves(client):
     assert len(curves["series"]) == 2
     assert curves["dates"] == ["2026-02-02", "2026-02-04"]
 
+    # 标准化 = 2^(ΔPD)：基准点一定为 1.0，之后按累计 PD 差值翻倍
     normalized = client.get(
         f"/api/groups/{group['id']}/curves?normalize=true&start_date=2026-02-02"
     ).get_json()
@@ -483,6 +506,10 @@ def test_group_members_order_status_and_curves(client):
     for series in normalized["series"]:
         first_point = series["points"][0]
         assert first_point["value"] == pytest.approx(1.0)
+    by_name = {series["cell_line"]: series for series in normalized["series"]}
+    b_points = by_name["B细胞"]["points"]
+    # B：基准 2026-02-02 累计 PD 1，02-04 累计 PD 3 -> 2^(3-1) = 4 倍
+    assert [point["value"] for point in b_points] == pytest.approx([1.0, 4.0])
 
     rates = client.get(f"/api/groups/{group['id']}/rates").get_json()
     # A、B 都有记录；B 有两条（间隔 2 天，PD=2），A 只有一条

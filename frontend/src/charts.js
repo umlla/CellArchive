@@ -110,8 +110,14 @@ export function groupCurvesOption(curves) {
   }))
   return {
     color: palette,
-    grid: { left: 58, right: 24, top: 52, bottom: 38 },
-    tooltip: { trigger: 'axis' },
+    grid: { left: 66, right: 24, top: 52, bottom: 38 },
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (value) => {
+        if (value === null || value === undefined) return '—'
+        return curves?.normalize ? `${value} 倍` : value
+      },
+    },
     legend: {
       top: 6,
       type: 'scroll',
@@ -128,12 +134,24 @@ export function groupCurvesOption(curves) {
       axisLabel,
       axisTick: { show: false },
     },
-    yAxis: {
-      type: 'value',
-      axisLine: { show: false },
-      axisLabel,
-      splitLine,
-    },
+    yAxis: curves?.normalize
+      ? {
+          type: 'log',
+          logBase: 10,
+          min: 1,
+          name: '扩增倍数',
+          nameTextStyle: { color: '#9ca3af', fontSize: 11 },
+          axisLine: { show: false },
+          axisLabel: { ...axisLabel, formatter: (value) => `${value}×` },
+          splitLine,
+          minorSplitLine: { show: false },
+        }
+      : {
+          type: 'value',
+          axisLine: { show: false },
+          axisLabel,
+          splitLine,
+        },
     series,
   }
 }
@@ -146,6 +164,8 @@ export const compareMetrics = [
 export function compareCurvesOption(curves, metric = 'cumulative') {
   const basis = curves?.basis || 'date'
   const xKey = basis === 'elapsed' ? 'day' : 'date'
+  // 标准化后是扩增倍数，跨度可达上千倍，用对数轴才能看出差异
+  const logAxis = metric !== 'pd_per_day' && Boolean(curves?.normalize)
 
   const series = (curves?.series || []).map((item, index) => {
     const color = palette[index % palette.length]
@@ -180,14 +200,17 @@ export function compareCurvesOption(curves, metric = 'cumulative') {
 
   const yName = metric === 'pd_per_day'
     ? 'PD / 天'
-    : (curves?.normalize ? '相对 PD' : '累计 PD')
+    : (curves?.normalize ? '扩增倍数（相对基准）' : '累计 PD')
 
   return {
     color: palette,
-    grid: { left: 58, right: 24, top: 56, bottom: 40 },
+    grid: { left: 66, right: 24, top: 56, bottom: 40 },
     tooltip: {
       trigger: 'axis',
-      valueFormatter: (value) => (value === null || value === undefined ? '—' : value),
+      valueFormatter: (value) => {
+        if (value === null || value === undefined) return '—'
+        return curves?.normalize && metric !== 'pd_per_day' ? `${value} 倍` : value
+      },
     },
     legend: {
       top: 6,
@@ -201,21 +224,33 @@ export function compareCurvesOption(curves, metric = 'cumulative') {
       type: 'category',
       data: basis === 'elapsed' ? elapsedAxis : dates,
       boundaryGap: false,
-      name: basis === 'elapsed' ? '距首条记录（天）' : '',
+      name: basis === 'elapsed' ? '距基准点（天）' : '',
       nameLocation: 'end',
       nameTextStyle: { color: '#9ca3af', fontSize: 11 },
       axisLine,
       axisLabel,
       axisTick: { show: false },
     },
-    yAxis: {
-      type: 'value',
-      name: yName,
-      nameTextStyle: { color: '#9ca3af', fontSize: 11 },
-      axisLine: { show: false },
-      axisLabel,
-      splitLine,
-    },
+    yAxis: logAxis
+      ? {
+          type: 'log',
+          logBase: 10,
+          min: 1,
+          name: yName,
+          nameTextStyle: { color: '#9ca3af', fontSize: 11 },
+          axisLine: { show: false },
+          axisLabel: { ...axisLabel, formatter: (value) => `${value}×` },
+          splitLine,
+          minorSplitLine: { show: false },
+        }
+      : {
+          type: 'value',
+          name: yName,
+          nameTextStyle: { color: '#9ca3af', fontSize: 11 },
+          axisLine: { show: false },
+          axisLabel,
+          splitLine,
+        },
     series,
   }
 }

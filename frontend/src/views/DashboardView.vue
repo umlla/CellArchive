@@ -261,14 +261,14 @@
                 <div class="panel-head" style="align-items: flex-start">
                   <div>
                     <h2>📈 组内生长曲线</h2>
-                    <p class="sub">累计 PD 随日期变化</p>
+                    <p class="sub">{{ normalize ? '扩增倍数（相对基准点）' : '累计 PD 随日期变化' }}</p>
                   </div>
                   <div class="curves-controls">
                     <el-switch v-model="normalize" active-text="标准化" size="small" @change="onNormalizeChange" />
                     <el-select
                       v-if="normalize"
                       v-model="startDate"
-                      placeholder="起始日期"
+                      placeholder="基准日期"
                       size="small"
                       style="width: 132px"
                       @change="loadCurves"

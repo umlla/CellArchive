@@ -11,6 +11,26 @@ from ..errors import ValidationError
 from . import fetch_all, get_or_404, placeholders
 
 
+def _find_baseline(records: list[dict[str, Any]], start_date: str) -> dict[str, Any] | None:
+    """取起始日当天或之后最近的一条记录作为标准化基准。
+
+    不同批次传代日期不一致，要求「当天必须有记录」会让大量批次被丢掉；
+    这里改为向后找最近一条，仍取不到（起始日晚于全部记录）才放弃。
+    """
+    candidates = [record for record in records if record["date"] and record["date"] >= start_date]
+    return candidates[0] if candidates else None
+
+
+def _normalized_value(cumulative_pd: Any, base_pd: float) -> float:
+    """标准化值 = 2^(该点累计 PD − 基准累计 PD)，即相对基准点的扩增倍数。
+
+    用差值而不是比值：不同批次初始 PD 不同，比值会把它带进来并把增速差异压扁；
+    差值法的 1.0 一定表示「和基准点一样多」，后面每 +1 PD 翻一倍。
+    """
+    delta = float(cumulative_pd or 0) - base_pd
+    return round(2 ** delta, 3)
+
+
 def dashboard(conn: sqlite3.Connection) -> dict[str, Any]:
     today = date.today()
     week_ago = (today - timedelta(days=7)).isoformat()
@@ -209,7 +229,8 @@ def compare_curves(
 
     - line_ids：要对比的细胞株，按传入顺序排列
     - batch_ids：可只取指定批次；为空时取这些细胞株的批次（默认仅活跃批次）
-    - normalize：以各批次在 start_date 的累计 PD 为基准做归一化，便于比较增殖快慢
+    - normalize：以各批次在 start_date（或之后最近一条记录）为基准，
+      输出 2^(ΔPD) 扩增倍数，便于比较增殖快慢
     - basis：date 按日期对齐；elapsed 按「距批次首条记录的天数」对齐
 
     每个点同时给出：
@@ -297,24 +318,29 @@ def compare_curves(
             previous = record
 
         if normalize:
-            exact = next((point for point in points if point["date"] == start_date), None)
-            if exact is None:
+            baseline = _find_baseline(points, start_date)
+            if baseline is None:
                 skipped.append({"batch_id": batch["batch_id"], "name": batch["batch_name"],
-                                "reason": f"{start_date} 当天没有记录"})
+                                "reason": f"{start_date} 之后没有记录"})
                 continue
-            base = float(exact["cumulative_pd"] or 0)
-            if base == 0:
-                skipped.append({"batch_id": batch["batch_id"], "name": batch["batch_name"],
-                                "reason": "起始累计 PD 为 0，无法标准化"})
-                continue
-            points = [point for point in points if point["date"] >= start_date]
+            base = float(baseline["cumulative_pd"] or 0)
+            points = [point for point in points if point["date"] >= baseline["date"]]
             for point in points:
-                point["value"] = round(float(point["cumulative_pd"]) / base, 3)
+                point["value"] = _normalized_value(point["cumulative_pd"], base)
+                point["fold"] = point["value"]
+            # 时间轴从基准点算起，便于「按培养天数」对齐比较
+            baseline_day = baseline["day"]
+            for point in points:
+                point["day"] = point["day"] - baseline_day
 
         # 批次级汇总：整段时间的平均 PD/天 与平均倍增时间
         rates = [point["pd_per_day"] for point in points if point["pd_per_day"] is not None]
-        span = points[-1]["day"] - points[0]["day"] if len(points) > 1 else 0
         avg_pd_per_day = round(sum(rates) / len(rates), 4) if rates else None
+        # 跨度按真实日期计算（标准化后 day 会从基准点重新计数）
+        span = 0
+        if len(points) > 1:
+            span = (date.fromisoformat(points[-1]["date"])
+                    - date.fromisoformat(points[0]["date"])).days
         if span > 0 and points:
             overall = (float(points[-1]["cumulative_pd"] or 0) - float(points[0]["cumulative_pd"] or 0)) / span
         else:
@@ -358,7 +384,11 @@ def group_curves(
     start_date: str | None = None,
     ended_ids: list[int] | None = None,
 ) -> dict[str, Any]:
-    """组内生长曲线：活跃批次 + 指定已终止批次；可选按起始日期标准化。"""
+    """组内生长曲线：活跃批次 + 指定已终止批次。
+
+    标准化模式下：以起始日（或之后最近一条记录）为基准，输出 2^(ΔPD)，
+    即相对基准点的扩增倍数，便于直接比较不同批次的增速。
+    """
     member_ids = _active_member_ids(conn, group_id)
     if not member_ids:
         return {"series": [], "dates": [], "normalize": normalize, "start_date": start_date,
@@ -429,19 +459,15 @@ def group_curves(
         if normalize:
             if not start_date:
                 raise ValidationError("标准化模式必须提供起始日期")
-            exact = next((record for record in records if record["date"] == start_date), None)
-            if exact is None:
-                skipped.append({"batch_id": batch["batch_id"], "reason": f"{start_date} 当天没有记录"})
+            baseline = _find_baseline(records, start_date)
+            if baseline is None:
+                skipped.append({"batch_id": batch["batch_id"], "reason": f"{start_date} 之后没有记录"})
                 continue
-            base = float(exact["cumulative_pd"] or 0)
-            if base == 0:
-                skipped.append({"batch_id": batch["batch_id"], "reason": "起始累计 PD 为 0，无法标准化"})
-                continue
-            points = [
-                point for point in points if point["date"] >= start_date
-            ]
+            base = float(baseline["cumulative_pd"] or 0)
+            points = [point for point in points if point["date"] >= baseline["date"]]
             for point in points:
-                point["value"] = round(float(point["cumulative_pd"]) / base, 3)
+                point["value"] = _normalized_value(point["cumulative_pd"], base)
+                point["fold"] = point["value"]
 
         series.append({
             "batch_id": batch["batch_id"],
