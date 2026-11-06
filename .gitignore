@@ -20,7 +20,11 @@ config.json
 pytest-cache-files-*/
 frontend/node_modules/
 frontend/dist/
+web/node_modules/
 data/
-build/
-dist/
+/build/
+/.build/
+/release/
+/.tools/
+/dist/
 *.log

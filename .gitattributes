@@ -1,6 +1,8 @@
 * text=auto
 # 批处理文件必须保留 CRLF，否则从 GitHub 下载 ZIP 后双击无法运行
 *.bat -text
+*.command text eol=lf
+*.sh text eol=lf
 *.ico binary
 *.png binary
 *.db binary
