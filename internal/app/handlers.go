@@ -2,11 +2,35 @@ package app
 
 import (
 	"database/sql"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
+
+func (a *App) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-CellTracker-Shutdown") != "1" {
+		writeError(w, &APIError{Status: http.StatusForbidden, Code: "forbidden", Message: "缺少退出确认"})
+		return
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if host != "127.0.0.1" && host != "::1" && host != "localhost" {
+		writeError(w, &APIError{Status: http.StatusForbidden, Code: "forbidden", Message: "只允许本机退出"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	if a.shutdown != nil {
+		go func() {
+			time.Sleep(250 * time.Millisecond)
+			a.shutdown()
+		}()
+	}
+}
 
 func (a *App) handleMeta(w http.ResponseWriter, r *http.Request) {
 	counts := tableCounts(r.Context(), a.store.DB())

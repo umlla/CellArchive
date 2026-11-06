@@ -14,9 +14,15 @@ import (
 )
 
 type App struct {
-	cfg   *Config
-	store *Store
-	auth  *Auth
+	cfg      *Config
+	store    *Store
+	auth     *Auth
+	shutdown func()
+}
+
+// SetShutdown installs the callback used by POST /api/shutdown.
+func (a *App) SetShutdown(fn func()) {
+	a.shutdown = fn
 }
 
 func New(cfg *Config, store *Store) (*App, error) {
@@ -42,6 +48,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/auth/me", a.auth.HandleMe)
 	mux.HandleFunc("POST /api/auth/login", a.auth.HandleLogin)
 	mux.HandleFunc("POST /api/auth/logout", a.auth.HandleLogout)
+	mux.HandleFunc("POST /api/shutdown", a.handleShutdown)
 
 	mux.HandleFunc("GET /api/cell-lines", a.handleListLines)
 	mux.HandleFunc("POST /api/cell-lines", a.handleCreateLine)

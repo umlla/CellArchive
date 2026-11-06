@@ -35,6 +35,14 @@
           <el-icon class="ok"><CircleCheckFilled /></el-icon>
           <span>旧版数据已迁移 · 校验通过</span>
         </div>
+        <button class="backup-button" @click="backupNow">
+          <el-icon><Download /></el-icon>
+          <span>备份数据库</span>
+        </button>
+        <button class="quit-button" @click="quitApp">
+          <el-icon><SwitchButton /></el-icon>
+          <span>退出程序</span>
+        </button>
       </div>
     </el-aside>
 
@@ -88,7 +96,10 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { http } from './api'
 import { logout, store } from './store'
+import { downloadUrl } from './utils'
 
 const route = useRoute()
 const router = useRouter()
@@ -130,5 +141,43 @@ async function handleCommand(command) {
     await logout()
     router.push({ name: 'login' })
   }
+}
+
+function backupNow() {
+  downloadUrl('/api/maintenance/backup')
+  ElMessage.success('正在生成并下载数据库备份')
+}
+
+async function quitApp() {
+  try {
+    await ElMessageBox.confirm(
+      '退出后需要重新启动 CellTracker 才能继续使用。',
+      '退出 CellTracker',
+      { type: 'warning', confirmButtonText: '退出', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await http.post('/shutdown', null, {
+      headers: { 'X-CellTracker-Shutdown': '1' },
+      silent: true,
+    })
+  } catch {
+    // 服务可能先关闭连接再返回响应，忽略即可。
+  }
+  showShutdownScreen()
+}
+
+function showShutdownScreen() {
+  const overlay = document.createElement('div')
+  overlay.className = 'shutdown-overlay'
+  overlay.innerHTML = `
+    <div class="shutdown-card">
+      <div class="shutdown-mark">🧬</div>
+      <h2>CellTracker 已退出</h2>
+      <p>可以关闭此页面。下次使用请重新打开 CellTracker。</p>
+    </div>`
+  document.body.appendChild(overlay)
 }
 </script>

@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -106,6 +107,12 @@ func run() int {
 		return 1
 	}
 
+	shutdownCh := make(chan struct{})
+	var shutdownOnce sync.Once
+	application.SetShutdown(func() {
+		shutdownOnce.Do(func() { close(shutdownCh) })
+	})
+
 	server := &http.Server{
 		Addr:              net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
 		Handler:           application.Handler(),
@@ -135,12 +142,15 @@ func run() int {
 			pause()
 			return 1
 		}
+		return 0
 	case <-stop:
 		log.Println("正在停止服务…")
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(ctx)
+	case <-shutdownCh:
+		log.Println("收到退出请求，正在停止服务…")
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = server.Shutdown(ctx)
 	return 0
 }
 

@@ -21,9 +21,14 @@ CellTracker 4.0.0 · 细胞培养追踪（macOS 通用版）
 - 日志：~/Library/Application Support/CellTracker/data/celltracker.log
 - 换电脑时，复制整个 CellTracker 文件夹即可。
 
-四、停止
-- 打开“活动监视器”，搜索 CellTracker，结束进程。
-- 或在“终端”执行：pkill CellTracker
+四、退出
+- 在网页左下角点击「退出程序」，确认后即可关闭。
+- 如果网页已经关闭：打开“活动监视器”搜索 CellTracker 并结束进程，
+  或在“终端”执行：pkill CellTracker
+
+五、更新软件
+- 用新的 CellTracker.app 替换旧 App，数据在 Application Support 中，不会被删除。
+- 更新前可以点网页左下角「备份数据库」，把 .db 下载到“下载”文件夹。
 
 五、局域网共享（可选）
 - 编辑 ~/Library/Application Support/CellTracker/config.json，
