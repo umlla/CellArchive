@@ -141,31 +141,25 @@ export function groupCurvesOption(curves) {
 export const compareMetrics = [
   { value: 'cumulative', label: '累计 PD' },
   { value: 'pd_per_day', label: 'PD/天' },
-  { value: 'doubling_hours', label: '倍增时间（h）' },
-  { value: 'elapsed_pd', label: 'PD/天（累计）' },
 ]
 
 export function compareCurvesOption(curves, metric = 'cumulative') {
   const basis = curves?.basis || 'date'
-  const isRate = metric === 'pd_per_day' || metric === 'doubling_hours'
   const xKey = basis === 'elapsed' ? 'day' : 'date'
 
   const series = (curves?.series || []).map((item, index) => {
     const color = palette[index % palette.length]
+    // 首条记录没有「上一次接种」，PD/天 为空，折线从第二个点开始
     const data = item.points.map((point) => {
-      let value
-      if (metric === 'pd_per_day') value = point.pd_per_day
-      else if (metric === 'doubling_hours') value = point.doubling_hours
-      else if (metric === 'elapsed_pd') value = point.elapsed_pd
-      else value = point.value
+      const value = metric === 'pd_per_day' ? point.pd_per_day : point.value
       return [point[xKey], value === null || value === undefined ? null : value]
     })
     return {
       name: item.cell_line,
-      type: isRate ? 'bar' : 'line',
-      barMaxWidth: 14,
+      type: 'line',
       smooth: true,
-      symbolSize: 5,
+      symbolSize: 6,
+      showSymbol: true,
       connectNulls: false,
       data,
       lineStyle: {
@@ -184,12 +178,9 @@ export function compareCurvesOption(curves, metric = 'cumulative') {
   const maxDay = elapsed.length ? Math.max(...elapsed) : 0
   const elapsedAxis = Array.from({ length: maxDay + 1 }, (_, index) => index)
 
-  const yName = {
-    cumulative: curves?.normalize ? '相对 PD' : '累计 PD',
-    pd_per_day: 'PD / 天',
-    doubling_hours: '倍增时间（小时）',
-    elapsed_pd: '累计 PD',
-  }[metric] || ''
+  const yName = metric === 'pd_per_day'
+    ? 'PD / 天'
+    : (curves?.normalize ? '相对 PD' : '累计 PD')
 
   return {
     color: palette,
@@ -209,7 +200,7 @@ export function compareCurvesOption(curves, metric = 'cumulative') {
     xAxis: {
       type: 'category',
       data: basis === 'elapsed' ? elapsedAxis : dates,
-      boundaryGap: isRate,
+      boundaryGap: false,
       name: basis === 'elapsed' ? '距首条记录（天）' : '',
       nameLocation: 'end',
       nameTextStyle: { color: '#9ca3af', fontSize: 11 },

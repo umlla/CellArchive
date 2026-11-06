@@ -96,6 +96,11 @@
               <el-table-column label="整段 PD/天" width="100" align="right">
                 <template #default="{ row }">{{ row.overall_pd_per_day ?? '—' }}</template>
               </el-table-column>
+              <el-table-column label="整段倍增时间" width="118" align="right">
+                <template #default="{ row }">
+                  {{ row.overall_doubling_hours === null ? '—' : `${row.overall_doubling_hours} h` }}
+                </template>
+              </el-table-column>
               <el-table-column label="状态" width="80" align="center">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.ended ? 'info' : 'success'" effect="plain">
@@ -158,6 +163,7 @@ const summaryRows = computed(() =>
       avg_pd_per_day: item.avg_pd_per_day ?? '—',
       avg_doubling_hours: item.avg_doubling_hours ?? null,
       overall_pd_per_day: item.overall_pd_per_day ?? null,
+      overall_doubling_hours: item.overall_doubling_hours ?? null,
       ended: item.ended,
     }
   }),
