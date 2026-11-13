@@ -1,6 +1,6 @@
 # 🧬 CellTracker · 细胞培养追踪
 
-记录细胞株、培养批次、传代、冻存和生长曲线。Flask 后端 + Vue 3 前端，本地运行、数据留在自己电脑上。
+记录细胞株、培养批次、传代、冻存和生长曲线。程序跑在你自己电脑上，数据只存在本地。
 
 ## 界面预览
 
@@ -21,45 +21,127 @@
 - **自定义标签与配色**：给细胞株打任意标签（物种、项目、来源都行），同一标签自动使用同一色系，同一细胞株颜色全局一致
 - **数据安全**：一键备份 / 恢复，SQLite 单文件存储，兼容旧版数据
 
-## 快速开始
+---
 
-### Windows
+## 安装（小白版）
 
-双击 `start.bat`。首次运行会自动创建虚拟环境并安装依赖。
+先说清楚：这个软件需要先装两个「基础工具」，之后每次只要双击一个文件就能用。
 
-浏览器打开 <http://127.0.0.1:18600/>。数据保存在 `data/cell_data.db`。
+### 第 1 步：安装 Python
 
-### macOS / Linux
+Python 是运行这个程序的引擎。
+
+- **Windows**：打开 <https://www.python.org/downloads/>，点黄色的 **Download Python** 按钮。
+  安装时**务必勾选**第一页最下面的 **Add python.exe to PATH**，再点 Install Now。
+- **macOS**：同样去 <https://www.python.org/downloads/> 下载安装包，双击一路下一步。
+
+安装完成后不用做任何设置，程序会自动找到它。
+
+### 第 2 步：安装 Node.js
+
+Node.js 用来生成网页界面。**只需要装一次**，装好后平时用不到。
+
+打开 <https://nodejs.org/>，下载 **LTS** 版本（绿色按钮），一路下一步安装即可。
+
+> 为什么需要两个？Python 负责计算和数据，Node.js 负责生成网页界面。第一次运行时程序会自动把网页「编译」好，之后就不再需要它了。
+
+### 第 3 步：下载本程序
+
+- 会一点点 Git：在终端执行
+  ```bash
+  git clone https://github.com/umlla/celltracker.git
+  ```
+- 不会 Git：在页面右上角点绿色 **Code → Download ZIP**，下载后解压到一个**有写入权限**的文件夹。
+
+> ⚠️ 不要放在 `C:\Program Files` 这类系统目录里，程序需要在同目录下读写数据。
+
+### 第 4 步：启动
+
+- **Windows**：双击文件夹里的 **`start.bat`**
+- **macOS**：双击 **`start-mac.command`**
+  （如果提示没有权限，打开「终端」，输入 `chmod +x ` 再把文件拖进终端窗口，回车一次即可）
+
+第一次启动会**自动**做三件事，需要几分钟，请耐心等待：
+
+1. 创建运行环境
+2. 下载依赖（需要联网）
+3. 生成网页界面
+
+看到下面这样的提示就说明成功了：
+
+```
+============================================================
+ 🧬 CellTracker v4.0.0
+ 数据库：...\data\cell_data.db
+ 本机访问：http://127.0.0.1:18600/
+============================================================
+```
+
+### 第 5 步：打开页面
+
+在浏览器地址栏输入 **<http://127.0.0.1:18600/>**，或用 Ctrl+点击上面终端里的链接。
+
+### 以后怎么用
+
+之后每次只需**双击同一个 `start.bat`（或 `start-mac.command`）**，然后打开上面的网址即可，不会再等安装。
+
+**用完怎么关**：关闭那个黑色命令行窗口，或在页面左下角点「退出程序」。
+
+**数据在哪**：程序目录下的 `data/cell_data.db`。**备份这个文件就等于备份了全部数据**，也可以点页面左下角「备份数据库」。
+
+---
+
+## 安装（开发者）
+
+如果你熟悉命令行，可以手动控制每个步骤：
 
 ```bash
 git clone https://github.com/umlla/celltracker.git
 cd celltracker
+
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r backend/requirements.txt
+
+# 前端需要先构建（构建产物不进仓库）
+cd frontend && npm install && npm run build && cd ..
+
 python -m backend.serve
 ```
 
-前端已构建产物在 `frontend/dist`，后端会直接托管，无需单独启动 Node。
+要求：Python 3.10+、Node.js 18+。
 
 ### 修改前端
 
 ```bash
 cd frontend
 npm install
-npm run build     # 产物输出到 frontend/dist
+npm run dev      # 开发模式，改代码自动刷新
+npm run build    # 构建到 frontend/dist，由后端托管
 ```
 
-## 配置
+### 运行测试
 
-复制 `config.example.json` 为 `config.json` 后按需修改（`config.json` 不会被提交）：
+```bash
+pytest
+```
+
+---
+
+## 配置（可选）
+
+程序默认就能用，**不需要任何配置**。只有需要改端口、开放局域网访问、开启登录时才需要建配置文件。
+
+复制 `config.example.json`，改名为 `config.json`，按需修改：
 
 | 字段 | 说明 |
 | --- | --- |
-| `host` | 监听地址，`127.0.0.1` 仅本机；局域网访问改 `0.0.0.0` |
-| `port` | 端口，默认 18600 |
-| `database` | 数据库路径，默认 `data/cell_data.db` |
-| `auth.enabled` | 是否启用登录认证 |
+| `host` | 监听地址。`127.0.0.1` 只有本机能访问；改成 `0.0.0.0` 后同一局域网的其他设备也能访问 |
+| `port` | 端口，默认 18600。若提示端口被占用，改成 18601 等 |
+| `database` | 数据库文件位置，默认 `data/cell_data.db` |
+| `auth.enabled` | 是否启用登录认证，默认关闭 |
+
+> `config.json` 里有你自己的设置，不会被提交到仓库。
 
 ## 自定义标签与配色
 
@@ -84,6 +166,23 @@ npm run build     # 产物输出到 frontend/dist
 
 - 拉取新代码后重启服务；`data` 和 `backups` 文件夹不要删除。
 - 更新前可点页面左下角「备份数据库」下载一份快照，需要时在「数据与工具 → 恢复备份」上传恢复。
+
+## 常见问题
+
+**提示「未找到 Python 3.10 或更高版本」**
+Python 没装好或版本太旧。重装时记得在 Windows 上勾选 **Add python.exe to PATH**。
+
+**提示「未找到 Node.js / npm」**
+还没装 Node.js，回到第 2 步安装后重新双击启动脚本。
+
+**提示端口已被占用**
+改 `config.json` 的 `port`（例如改成 18601），或关掉占用该端口的程序。
+
+**页面打不开**
+确认那个黑色命令行窗口还开着——窗口一关服务就停了。
+
+**想换电脑**
+把整个文件夹（至少 `data` 目录）拷过去即可。
 
 ## 许可
 
