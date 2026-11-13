@@ -52,6 +52,160 @@ def test_create_line_requires_name(client):
 
 
 # --------------------------------------------------------------------------
+# 物种标签与配色
+# --------------------------------------------------------------------------
+def test_line_species_is_free_text(client):
+    line = create_line(client, "HeLa", species="抹香鲸")
+    # 物种不预设，原样保存，不做任何归一
+    assert line["species"] == "抹香鲸"
+    updated = client.patch(f"/api/cell-lines/{line['id']}", json={"species": "Whale X"})
+    assert updated.get_json()["species"] == "Whale X"
+    cleared = client.patch(f"/api/cell-lines/{line['id']}", json={"species": ""})
+    assert cleared.get_json()["species"] is None
+    # 接口不再下发任何预设物种列表
+    assert "species_choices" not in client.get("/api/meta").get_json()
+
+
+def test_adding_species_does_not_recolor_existing(client):
+    """新增物种时，已有物种的颜色必须保持不变（不能整体重排）。"""
+    first = create_line(client, "样本甲-1", species="抹香鲸")
+    second = create_line(client, "样本乙-2", species="人")
+
+    def colors():
+        palette = client.get("/api/meta").get_json()["species_colors"]
+        return {item["cell_line_id"]: item["color"] for item in palette["lines"]}
+
+    before = colors()
+    create_line(client, "新物种样本", species="全新物种")
+    after = colors()
+    # 老细胞株的颜色一个都不能变
+    assert after[first["id"]] == before[first["id"]]
+    assert after[second["id"]] == before[second["id"]]
+
+
+def test_species_colors_are_stable_and_grouped(client):
+    human_a = create_line(client, "HeLa", species="人")
+    human_b = create_line(client, "A549", species="人")
+    mouse = create_line(client, "NIH3T3", species="小鼠")
+
+    palette = client.get("/api/meta").get_json()["species_colors"]
+    colors = {item["cell_line_id"]: item["color"] for item in palette["lines"]}
+    # 颜色只由「物种 + 细胞株」决定，多次请求完全一致
+    again = client.get("/api/meta").get_json()["species_colors"]
+    assert colors == {item["cell_line_id"]: item["color"] for item in again["lines"]}
+
+    def hue_of(hex_color):
+        value = hex_color.lstrip("#")
+        red, green, blue = (int(value[index:index + 2], 16) / 255 for index in (0, 2, 4))
+        high, low = max(red, green, blue), min(red, green, blue)
+        delta = high - low
+        if delta == 0:
+            return 0.0
+        if high == red:
+            return (60 * ((green - blue) / delta)) % 360
+        if high == green:
+            return 60 * ((blue - red) / delta) + 120
+        return 60 * ((red - green) / delta) + 240
+
+    def hue_distance(first, second):
+        diff = abs(first - second) % 360
+        return min(diff, 360 - diff)
+
+    human_colors = [colors[human_a["id"]], colors[human_b["id"]]]
+    mouse_color = colors[mouse["id"]]
+    human_hues = [hue_of(color) for color in human_colors]
+    mouse_hue = hue_of(mouse_color)
+    # 同物种：色相相近（同一区间内）
+    assert abs(human_hues[0] - human_hues[1]) < 40
+    # 不同物种：色相落在不同区间，至少隔开一个槽位宽度的 60%
+    assert min(hue_distance(hue, mouse_hue) for hue in human_hues) > 13.5
+
+
+def test_bulk_assign_species_keeps_existing(client):
+    first = create_line(client, "HeLa", species="人")
+    second = create_line(client, "NIH3T3")
+    result = client.post("/api/cell-lines/species", json={"species": "小鼠", "only_unset": True})
+    assert result.status_code == 200
+    assert result.get_json()["updated"] == 1
+    listing = {item["name"]: item["species"] for item in client.get("/api/cell-lines").get_json()}
+    # 默认只补未标注的，已单独设置的人不会被覆盖
+    assert listing["HeLa"] == "人"
+    assert listing["NIH3T3"] == "小鼠"
+    assert first["species"] == "人" and second["species"] is None
+
+
+def test_species_entries_written_per_row(client):
+    """物种标签是自由文本，按行分别写入。"""
+    first = create_line(client, "样本甲-1")
+    second = create_line(client, "样本乙-2")
+    result = client.post("/api/cell-lines/species", json={"entries": [
+        {"id": first["id"], "species": "标签甲"},
+        {"id": second["id"], "species": "标签乙"},
+    ]})
+    assert result.status_code == 200
+    assert result.get_json()["updated"] == 2
+    listing = {item["name"]: item["species"] for item in client.get("/api/cell-lines").get_json()}
+    assert listing["样本甲-1"] == "标签甲"
+    assert listing["样本乙-2"] == "标签乙"
+
+
+def test_species_is_free_text(client):
+    """物种不预设任何选项，用户输入什么就存什么。"""
+    line = create_line(client, "自由标签细胞", species="任意自定义标签")
+    assert line["species"] == "任意自定义标签"
+
+    updated = client.patch(f"/api/cell-lines/{line['id']}", json={"species": "另一个标签"})
+    assert updated.status_code == 200
+    assert updated.get_json()["species"] == "另一个标签"
+
+    # 不提供预设列表
+    assert "species_choices" not in client.get("/api/meta").get_json()
+
+
+def test_each_species_gets_its_own_hue_band(client):
+    names = ["标签甲", "标签乙", "标签丙", "标签丁"]
+    for index, species in enumerate(names):
+        create_line(client, f"L{index}-a", species=species)
+        create_line(client, f"L{index}-b", species=species)
+    palette = client.get("/api/meta").get_json()["species_colors"]
+    bands = {}
+    for item in palette["lines"]:
+        bands.setdefault(item["species"], set()).add(item["color"])
+    # 每个标签都有颜色，且同标签两株颜色不同（同色系但可区分）
+    assert all(len(colors) == 2 for colors in bands.values())
+    # 不同标签之间不共享任何颜色
+    all_colors = [color for colors in bands.values() for color in colors]
+    assert len(all_colors) == len(set(all_colors))
+
+
+def test_group_charts_reuse_cell_line_color(client):
+    line = create_line(client, "HeLa", species="人")
+    batch_one = create_batch(client, line["id"])
+    batch_two = create_batch(client, line["id"], revival_date="2026-03-01")
+    add_record(client, batch_one["id"])
+    add_record(client, batch_two["id"])
+    group = client.post("/api/groups", json={"group_name": "G", "cell_line_ids": [line["id"]]})
+    group_id = group.get_json()["id"]
+
+    rates = client.get(f"/api/groups/{group_id}/rates").get_json()
+    curves = client.get(f"/api/groups/{group_id}/curves").get_json()
+    compare = client.get(f"/api/compare/curves?line_ids={line['id']}").get_json()
+    palette = client.get("/api/meta").get_json()["species_colors"]
+    base = next(item["color"] for item in palette["lines"] if item["cell_line_id"] == line["id"])
+
+    # 增殖速率柱与累计 PD 曲线：同一细胞株同一颜色，多批次只差深浅
+    assert len(rates) == 2
+    assert all(row["species"] == "人" for row in rates)
+    assert base in {row["color"] for row in rates}
+    assert all(row["color"].startswith("#") for row in rates)
+    assert all(item["species"] == "人" for item in curves["series"])
+    assert base in {item["color"] for item in curves["series"]}
+    # 对比页同样是同细胞株同色系：首批次用主色，其余批次是主色的浅色
+    assert base in {item["color"] for item in compare["series"]}
+    assert len({item["color"] for item in compare["series"]}) == 2
+
+
+# --------------------------------------------------------------------------
 # 批次与传代记录
 # --------------------------------------------------------------------------
 def test_batch_and_record_pd_flow(client):
@@ -417,6 +571,26 @@ def test_vials_unplaced_filter(client):
     assert unplaced[0]["location"] == ""
 
 
+def test_dashboard_counts_unplaced_in_stock_vials(client):
+    """首页「待录入位置」只统计在库且未填位置的管，已复苏/已丢弃的不算。"""
+    line = create_line(client, "待定位统计细胞")
+    # 在库 + 未填位置 → 计入
+    client.post("/api/vials", json={"cell_line_id": line["id"], "cell_count": 1.0, "location": ""})
+    # 在库 + 已填位置 → 不计入
+    client.post("/api/vials", json={"cell_line_id": line["id"], "cell_count": 1.0,
+                                    "location": "罐C/架1/盒1/A1"})
+    # 未填位置但已丢弃 → 不计入
+    discarded = client.post("/api/vials", json={
+        "cell_line_id": line["id"], "cell_count": 1.0, "location": "", "status": "已丢弃",
+    }).get_json()
+    assert discarded[0]["status"] == "已丢弃"
+
+    stats = client.get("/api/dashboard").get_json()["stats"]
+    assert stats["total_vials"] == 3
+    assert stats["in_stock_vials"] == 2
+    assert stats["unplaced_vials"] == 1
+
+
 def test_batch_binds_vial_and_marks_revived(client):
     line = create_line(client, "复苏细胞")
     vial = client.post("/api/vials", json={
@@ -527,6 +701,31 @@ def test_group_members_order_status_and_curves(client):
     assert a_rate["avg_pd_per_day"] is None
     assert a_rate["interval_count"] == 0
     assert a_rate["span_days"] == 0
+
+
+def test_group_rates_can_include_ended_batches(client):
+    line = create_line(client, "速率终止细胞")
+    group = client.post("/api/groups", json={
+        "group_name": "速率终止组", "cell_line_ids": [line["id"]],
+    }).get_json()
+
+    active = create_batch(client, line["id"], revival_date="2026-02-01")
+    ended = create_batch(client, line["id"], revival_date="2026-03-01")
+    add_record(client, active["id"], date="2026-02-02", harvested_cells=4.0)
+    add_record(client, active["id"], date="2026-02-04", harvested_cells=8.0, next_passage_days=0)
+    add_record(client, ended["id"], date="2026-03-02", harvested_cells=4.0)
+    add_record(client, ended["id"], date="2026-03-04", harvested_cells=8.0, next_passage_days=0)
+    assert client.post(f"/api/batches/{ended['id']}/terminate",
+                       json={"reason": "实验结束"}).status_code == 200
+
+    default_rows = client.get(f"/api/groups/{group['id']}/rates").get_json()
+    assert [row["batch_id"] for row in default_rows] == [active["id"]]
+
+    all_rows = client.get(f"/api/groups/{group['id']}/rates?include_ended=true").get_json()
+    assert len(all_rows) == 2
+    ended_row = next(row for row in all_rows if row["batch_id"] == ended["id"])
+    assert ended_row["is_active"] == 0
+    assert ended_row["overall_pd_per_day"] == pytest.approx(1.0)
 
 
 def test_group_bulk_batch_create_and_terminate(client):

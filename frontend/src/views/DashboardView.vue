@@ -5,9 +5,7 @@
         label="在养细胞株"
         :value="dashboard?.stats?.active_cell_lines ?? '—'"
         icon="Collection"
-        hint="有活跃批次的细胞株 · 点击查看"
-        class="clickable-tile"
-        @click="openLineList"
+        hint="有活跃批次的细胞株"
       />
       <StatTile
         label="在养批次"
@@ -28,10 +26,10 @@
         @click="dueDialogVisible = true"
       />
       <StatTile
-        label="在库冻存管"
-        :value="dashboard?.stats?.in_stock_vials ?? '—'"
+        label="待录入位置"
+        :value="dashboard?.stats?.unplaced_vials ?? '—'"
         icon="Box"
-        hint="状态为「在库」的冻存管 · 点击查看"
+        hint="在库但未填位置的冻存管 · 点击查看"
         tint="rgba(190, 18, 60, 0.08)"
         class="clickable-tile"
         @click="openVialDialogList"
@@ -59,12 +57,16 @@
               v-for="line in filteredLines"
               :key="line.id"
               :class="['line-item', { active: line.id === selectedLineId }]"
+              :title="line.name"
               @click="selectLine(line.id)"
             >
               <span class="line-item-main">
-                <span class="line-name">{{ line.name }}</span>
+                <span class="line-name">
+                  <i class="swatch" :style="{ background: lineColor(line.id) }" />
+                  <span class="line-name-text">{{ line.name }}</span>
+                </span>
                 <span class="line-sub">
-                  {{ line.type || '—' }} · {{ line.active_batch_count }} 个在养批次
+                  {{ line.species ? `${line.species} · ` : '' }}{{ line.type || '—' }} · {{ line.active_batch_count }} 个在养批次
                 </span>
               </span>
               <span class="line-count" :class="{ zero: !line.active_batch_count }" :title="`在养批次 ${line.active_batch_count} 个`">
@@ -124,7 +126,7 @@
               <BatchCard
                 v-for="batch in lineDetail.batches"
                 :key="batch.id"
-                :batch="batch"
+                :batch="{ ...batch, cell_line_id: lineDetail.cell_line.id }"
                 @refresh="reloadAll"
                 @record="(target) => openRecordEntry(lineDetail.cell_line.id, target.id)"
               />
@@ -205,8 +207,21 @@
               <span class="small faint">红色=已逾期 · 黄色=2 天内 · 绿色=时间充裕</span>
             </div>
             <el-table :data="groupStatus" size="small" :row-class-name="rowClass" max-height="440">
-              <el-table-column prop="cell_name" label="细胞株" min-width="130" fixed />
-              <el-table-column prop="batch_name" label="批次" min-width="150" show-overflow-tooltip />
+              <el-table-column prop="cell_name" label="细胞株" min-width="130" fixed>
+                <template #default="{ row }">
+                  <span class="line-label">
+                    <i class="swatch" :style="{ background: lineColor(row.cell_line_id) }" />
+                    <span class="cell-wrap">{{ row.cell_name }}</span>
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="species" label="标签" width="76" />
+              <el-table-column prop="batch_name" label="批次" min-width="180">
+                <template #default="{ row }">
+                  <!-- 批次名完整显示，过长换行而不是省略 -->
+                  <span class="cell-wrap">{{ row.batch_name }}</span>
+                </template>
+              </el-table-column>
               <el-table-column prop="type" label="类型" width="76" />
               <el-table-column label="代次" width="64" align="center">
                 <template #default="{ row }">P{{ row.passage ?? '—' }}</template>
@@ -228,7 +243,7 @@
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column label="" width="46" align="center">
+              <el-table-column label="" width="46" align="center" fixed="right">
                 <template #default="{ row }">
                   <el-button link size="small" @click="$router.push({ path: '/', query: { mode: 'line', line: row.cell_line_id } })">
                     查看
@@ -244,6 +259,9 @@
                     <h2>📊 增殖速度对比</h2>
                     <p class="sub">整段 PD/天 · 柱子右侧为倍增时间</p>
                   </div>
+                  <el-checkbox v-model="ratesIncludeEnded" size="small" @change="loadGroupRates">
+                    包含已终止批次
+                  </el-checkbox>
                 </div>
                 <div class="panel-body">
                   <Chart
@@ -278,17 +296,49 @@
                   </div>
                 </div>
                 <div class="panel-body">
-                  <div v-if="curves.ended_batches?.length" class="row wrap" style="margin-bottom: 8px; gap: 6px">
-                    <span class="small faint">已终止批次：</span>
-                    <el-checkbox-group v-model="endedIds" size="small" @change="loadCurves">
+                  <div v-if="endedTotal" class="ended-filter">
+                    <span class="small faint ended-title">已终止批次（{{ endedTotal }}）</span>
+                    <el-checkbox
+                      :model-value="allEndedChecked"
+                      :indeterminate="endedIndeterminate"
+                      size="small"
+                      class="ended-all"
+                      @change="toggleAllEnded"
+                    >
+                      全选
+                    </el-checkbox>
+                    <el-checkbox-group v-model="endedIds" size="small" class="ended-list" @change="loadCurves">
                       <el-checkbox
                         v-for="batch in curves.ended_batches"
                         :key="batch.batch_id"
                         :value="batch.batch_id"
                       >
-                        {{ batch.cell_line }} · {{ batch.batch_name }}
+                        <!-- 批次名一般已含株名，这里只显示批次名 + 色块，避免标签过长 -->
+                        <span class="ended-item" :title="`${batch.cell_line} · ${batch.batch_name}`">
+                          <i class="ended-dot" :style="{ background: batch.color }" />
+                          {{ batch.batch_name }}
+                        </span>
                       </el-checkbox>
                     </el-checkbox-group>
+                  </div>
+                  <div v-if="curveLegend.length > 1" class="curve-legend">
+                    <button
+                      v-for="entry in curveLegend"
+                      :key="entry.cell_line_id"
+                      type="button"
+                      class="legend-chip"
+                      :class="{
+                        off: hiddenLineIds.includes(entry.cell_line_id),
+                        ended: entry.allEnded,
+                      }"
+                      :title="`${entry.cell_line}${entry.species ? `（${entry.species}）` : ''} · 点击显示/隐藏`"
+                      @click="toggleCurveLine(entry.cell_line_id)"
+                    >
+                      <i class="legend-swatch" :style="{ background: entry.color }" />
+                      <span class="legend-name">{{ entry.cell_line }}</span>
+                      <em v-if="entry.species" class="legend-species">{{ entry.species }}</em>
+                      <span v-if="entry.batches > 1" class="legend-count">×{{ entry.batches }}</span>
+                    </button>
                   </div>
                   <Chart v-if="curves.series?.length" :option="curvesOpt" height="320px" />
                   <div v-else class="empty-hint" style="padding: 40px">
@@ -338,8 +388,8 @@
           共 {{ activeBatchRows.length }} 个批次正在培养，点击「查看」跳转到对应细胞株。
         </div>
         <el-table :data="activeBatchRows" size="small" max-height="480">
-          <el-table-column prop="cell_line" label="细胞株" min-width="130" fixed />
-          <el-table-column prop="batch_name" label="批次" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="cell_line" label="细胞株" min-width="170" fixed />
+          <el-table-column prop="batch_name" label="批次" min-width="200" show-overflow-tooltip />
           <el-table-column label="代次" width="64" align="center">
             <template #default="{ row }">P{{ row.passage ?? '—' }}</template>
           </el-table-column>
@@ -371,19 +421,24 @@
       </template>
     </el-dialog>
 
-    <!-- 在库冻存管明细 -->
-    <el-dialog v-model="vialListVisible" title="在库冻存管" width="min(920px, 94vw)" top="8vh">
+    <!-- 待录入位置的冻存管 -->
+    <el-dialog v-model="vialListVisible" title="待录入位置的冻存管" width="min(920px, 94vw)" top="8vh">
       <div v-if="vialListRows.length">
-        <div class="small muted" style="margin-bottom: 10px">
-          共 {{ vialListRows.length }} 支在库，按冻存日期倒序显示。
+        <div class="row between" style="margin-bottom: 10px">
+          <span class="small muted">
+            共 {{ vialListRows.length }} 支在库但还没填位置，按冻存日期倒序显示。
+          </span>
+          <el-button link type="primary" size="small" @click="goVialsUnplaced">
+            去冻存管页面补位置 →
+          </el-button>
         </div>
         <el-table :data="vialListRows" size="small" max-height="480">
           <el-table-column prop="cell_name" label="细胞株" min-width="130" fixed />
           <el-table-column prop="freeze_date" label="冻存日期" width="110" />
-          <el-table-column label="位置" min-width="170" show-overflow-tooltip>
+          <el-table-column label="位置" min-width="170">
             <template #default="{ row }">
               <span v-if="row.location">{{ row.location }}</span>
-              <span v-else class="small faint">未填写</span>
+              <span v-else class="unplaced-tag">未填写</span>
             </template>
           </el-table-column>
           <el-table-column label="细胞数" width="96" align="right">
@@ -401,7 +456,7 @@
         </el-table>
       </div>
       <div v-else class="empty-hint">
-        <span class="icon">❄️</span>当前没有在库冻存管
+        <span class="icon">✅</span>所有在库冻存管都已填好位置
       </div>
       <template #footer>
         <el-button @click="vialListVisible = false">关闭</el-button>
@@ -426,8 +481,8 @@
           共 {{ dashboard.due_soon.length }} 个批次在 3 天内到期或已逾期，按建议传代日期排序。
         </div>
         <el-table :data="dashboard.due_soon" size="small" max-height="480">
-          <el-table-column prop="cell_line" label="细胞株" min-width="130" fixed />
-          <el-table-column prop="batch_name" label="批次" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="cell_line" label="细胞株" min-width="170" fixed />
+          <el-table-column prop="batch_name" label="批次" min-width="200" show-overflow-tooltip />
           <el-table-column label="分组" min-width="170">
             <template #default="{ row }">
               <template v-if="(groupsByLine[row.cell_line_id] || []).length">
@@ -595,11 +650,11 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { batchApi, groupApi, lineApi, metaApi, vialApi } from '../api'
-import { groupCurvesOption, ratesOption } from '../charts'
+import { groupCurvesOption, lineColor, ratesOption } from '../charts'
 import { loadMeta } from '../store'
 import { daysFromToday, downloadUrl, fmtNum, remainingMeta, statusTagType, todayISO } from '../utils'
 import Chart from '../components/Chart.vue'
@@ -622,10 +677,12 @@ const mode = ref('line')
 const selectedGroupId = ref(null)
 const groupStatus = ref([])
 const groupRates = ref([])
+const ratesIncludeEnded = ref(false)
 const curves = ref({ series: [], dates: [], ended_batches: [] })
 const normalize = ref(false)
 const startDate = ref(null)
 const endedIds = ref([])
+const hiddenLineIds = ref([])
 const exportAll = ref(true)
 
 const lineEditVisible = ref(false)
@@ -724,7 +781,50 @@ const rateRowsSorted = computed(() =>
     .sort((a, b) => b.overall_pd_per_day - a.overall_pd_per_day),
 )
 const ratesOpt = computed(() => ratesOption(groupRates.value))
-const curvesOpt = computed(() => groupCurvesOption(curves.value))
+const curvesOpt = computed(() => groupCurvesOption(curves.value, hiddenLineIds.value))
+
+// 右侧图例按细胞株合并：同一细胞株的多个批次共用一个色块，
+// 这样组内批次再多，图例也只是「细胞株条数」，永远不会挤成分页
+const curveLegend = computed(() => {
+  const entries = new Map()
+  for (const item of curves.value.series || []) {
+    const id = Number(item.cell_line_id)
+    if (!entries.has(id)) {
+      entries.set(id, {
+        cell_line_id: id,
+        cell_line: item.cell_line,
+        species: item.species,
+        color: lineColor(id),
+        batches: 0,
+        allEnded: true,
+      })
+    }
+    const entry = entries.get(id)
+    entry.batches += 1
+    if (!item.ended) entry.allEnded = false
+  }
+  return [...entries.values()]
+})
+
+function toggleCurveLine(id) {
+  const key = Number(id)
+  hiddenLineIds.value = hiddenLineIds.value.includes(key)
+    ? hiddenLineIds.value.filter((item) => item !== key)
+    : [...hiddenLineIds.value, key]
+}
+
+const endedTotal = computed(() => curves.value.ended_batches?.length || 0)
+const allEndedChecked = computed(
+  () => endedTotal.value > 0 && endedIds.value.length === endedTotal.value,
+)
+const endedIndeterminate = computed(
+  () => endedIds.value.length > 0 && endedIds.value.length < endedTotal.value,
+)
+
+function toggleAllEnded(checked) {
+  endedIds.value = checked ? (curves.value.ended_batches || []).map((batch) => batch.batch_id) : []
+  loadCurves()
+}
 
 async function loadBase() {
   const [dash, lineList, groupList] = await Promise.all([
@@ -758,16 +858,20 @@ async function selectLine(id) {
 
 async function loadGroupAll() {
   if (!selectedGroupId.value) return
-  const [statusRows, rateRows] = await Promise.all([
-    groupApi.status(selectedGroupId.value),
-    groupApi.rates(selectedGroupId.value),
-  ])
-  groupStatus.value = statusRows
-  groupRates.value = rateRows
+  groupStatus.value = await groupApi.status(selectedGroupId.value)
+  ratesIncludeEnded.value = false
   normalize.value = false
   endedIds.value = []
+  hiddenLineIds.value = []
   startDate.value = null
-  await loadCurves()
+  await Promise.all([loadGroupRates(), loadCurves()])
+}
+
+async function loadGroupRates() {
+  if (!selectedGroupId.value) return
+  groupRates.value = await groupApi.rates(selectedGroupId.value, {
+    include_ended: ratesIncludeEnded.value,
+  })
 }
 
 async function loadCurves() {
@@ -929,13 +1033,6 @@ function jumpToVialLine(row) {
   router.push({ path: '/', query: { mode: 'line', line: row.cell_line_id } })
 }
 
-async function openLineList() {
-  mode.value = 'line'
-  await nextTick()
-  const list = document.querySelector('.line-items')
-  if (list) list.scrollTop = 0
-}
-
 async function openBatchDialog() {
   batchDialogVisible.value = true
   if (activeBatchRows.value.length) return
@@ -963,13 +1060,19 @@ async function openVialDialogList() {
   vialListVisible.value = true
   if (vialListRows.value.length) return
   try {
-    const rows = await vialApi.list({ status: '在库', limit: 500 })
+    // 只取在库且没填位置的管，与卡片统计口径保持一致
+    const rows = await vialApi.list({ status: '在库', unplaced: true, limit: 500 })
     vialListRows.value = rows
       .slice()
       .sort((a, b) => (b.freeze_date || '').localeCompare(a.freeze_date || ''))
   } catch {
     vialListRows.value = []
   }
+}
+
+function goVialsUnplaced() {
+  vialListVisible.value = false
+  router.push({ path: '/vials', query: { unplaced: '1', status: '在库' } })
 }
 
 function openRecordEntry(lineId = null, batchId = null, groupId = null) {
@@ -1160,9 +1263,52 @@ function storeReady() {
 .line-name {
   font-weight: 550;
   font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* 细胞株名要能完整辨认，不做省略号截断，过长时换行 */
+.line-name-text {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.line-name .swatch {
+  margin-top: 6px;
+}
+
+/* 细胞株色点：与图表中该细胞株的颜色一致 */
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+
+.line-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 表格里的批次名/细胞株名完整显示，过长时换行而非省略号 */
+.cell-wrap {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+/* 待录入位置的冻存管：醒目标出「未填写」 */
+.unplaced-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #fff1f2;
+  color: #be123c;
+  font-size: 11px;
+  line-height: 17px;
 }
 
 .line-sub {
@@ -1226,6 +1372,119 @@ function storeReady() {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+/* 已终止批次筛选：全选 + 自动换行，条目多时内部滚动，不撑高卡片 */
+.ended-filter {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--ct-border);
+  border-radius: 8px;
+  background: #fafcfb;
+}
+
+.ended-all {
+  flex: none;
+  margin-right: 2px;
+}
+
+.ended-title {
+  flex: none;
+  line-height: 24px;
+}
+
+.ended-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  max-height: 72px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.ended-list :deep(.el-checkbox) {
+  margin-right: 0;
+  height: 22px;
+}
+
+.ended-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ended-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+  display: inline-block;
+}
+
+/* 曲线图例：按细胞株合并，纯前端渲染，自动换行，不需要分页 */
+.curve-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 8px 2px 7px;
+  border: 1px solid var(--ct-border);
+  border-radius: 999px;
+  background: #fff;
+  color: #4b5563;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 18px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
+}
+
+.legend-chip:hover {
+  border-color: #b9c6c3;
+  background: #f6faf9;
+}
+
+.legend-chip.off {
+  opacity: 0.4;
+}
+
+.legend-chip.ended .legend-swatch {
+  opacity: 0.5;
+}
+
+.legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+  display: inline-block;
+}
+
+.legend-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legend-species {
+  font-style: normal;
+  color: #9ca3af;
+}
+
+.legend-count {
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 1100px) {

@@ -12,7 +12,7 @@ from typing import Any
 from .. import db
 from ..config import Config
 from ..errors import ValidationError
-from . import fetch_all
+from . import audit, fetch_all
 from .batches import recalc_all
 from ..migrate import audit_active_records, audit_pd
 
@@ -171,6 +171,38 @@ def database_audit_after(conn: sqlite3.Connection) -> dict[str, Any]:
         "remaining_issues": db.consistency_issues(conn),
         "pd_mismatches": audit_pd(conn)["mismatch_count"],
     }
+
+
+def assign_species(
+    conn: sqlite3.Connection,
+    species: str,
+    *,
+    line_ids: list[int] | None = None,
+    only_unset: bool = True,
+    user: str | None = None,
+) -> dict[str, Any]:
+    """批量给细胞株打物种标签。
+
+    only_unset 为真时只处理还没标物种的细胞株，不会覆盖已单独设置的值。
+    """
+    from ..domain import normalize_species
+
+    value = normalize_species(species)
+    if not value:
+        raise ValidationError("物种不能为空")
+    sql = "SELECT id, name, species FROM cell_lines WHERE 1 = 1"
+    params: list[Any] = []
+    if line_ids:
+        sql += f" AND id IN ({','.join('?' * len(line_ids))})"
+        params.extend(int(item) for item in line_ids)
+    if only_unset:
+        sql += " AND (species IS NULL OR TRIM(species) = '')"
+    rows = conn.execute(sql, params).fetchall()
+    for row in rows:
+        conn.execute("UPDATE cell_lines SET species = ? WHERE id = ?", (value, int(row["id"])))
+    audit(conn, user, "assign_species", "cell_line", None,
+          {"species": value, "updated": len(rows), "only_unset": only_unset})
+    return {"species": value, "updated": len(rows), "names": [row["name"] for row in rows]}
 
 
 def save_upload(config: Config, file_storage, filename: str = "upload.db") -> Path:

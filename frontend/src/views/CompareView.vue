@@ -21,10 +21,18 @@
             v-for="line in filteredLines"
             :key="line.id"
             :class="['picker-item', { active: selectedLineIds.includes(line.id) }]"
+            :title="line.name"
           >
             <el-checkbox :model-value="selectedLineIds.includes(line.id)" @change="toggleLine(line.id)" />
-            <span class="picker-name">{{ line.name }}</span>
-            <span class="small faint">{{ line.active_batch_count }} 批</span>
+            <i class="swatch" :style="{ background: lineColor(line.id) }" />
+            <!-- 名称独占一行、完整显示；物种与批次数移到第二行，不再挤压名字 -->
+            <span class="picker-text">
+              <span class="picker-name">{{ line.name }}</span>
+              <span class="picker-meta">
+                <span v-if="line.species" class="picker-species">{{ line.species }}</span>
+                <span class="small faint">{{ line.active_batch_count }} 批</span>
+              </span>
+            </span>
           </label>
           <div v-if="!filteredLines.length" class="empty-hint" style="padding: 22px 12px">
             <span class="icon">🧫</span>没有匹配的细胞株
@@ -86,8 +94,23 @@
           <div v-if="summaryRows.length" class="summary">
             <div class="dialog-section-title">对比数据</div>
             <el-table :data="summaryRows" size="small" max-height="260">
-              <el-table-column prop="cell_line" label="细胞株" min-width="130" />
-              <el-table-column prop="batch_name" label="批次" min-width="150" show-overflow-tooltip />
+              <el-table-column label="细胞株" min-width="140">
+                <template #default="{ row }">
+                  <span class="line-label">
+                    <i class="swatch" :style="{ background: row.color }" />
+                    {{ row.cell_line }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="标签" width="86">
+                <template #default="{ row }">{{ row.species || '—' }}</template>
+              </el-table-column>
+              <el-table-column prop="batch_name" label="批次" min-width="180">
+                <template #default="{ row }">
+                  <!-- 批次名是区分同株不同批次的关键，换行显示而不截断 -->
+                  <span class="cell-wrap">{{ row.batch_name }}</span>
+                </template>
+              </el-table-column>
               <el-table-column label="记录数" width="80" align="center">
                 <template #default="{ row }">{{ row.records }}</template>
               </el-table-column>
@@ -134,7 +157,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { compareApi, lineApi } from '../api'
-import { compareCurvesOption, compareMetrics } from '../charts'
+import { compareCurvesOption, compareMetrics, lineColor } from '../charts'
+import { loadMeta } from '../store'
 import { fmtNum } from '../utils'
 import Chart from '../components/Chart.vue'
 
@@ -168,6 +192,8 @@ const summaryRows = computed(() =>
     const days = first && last ? Math.max(0, last.day) : 0
     return {
       cell_line: item.cell_line,
+      species: item.species,
+      color: item.color,
       batch_name: item.batch_name,
       records: points.length,
       first_date: first?.date || '—',
@@ -227,6 +253,7 @@ async function loadCurves() {
 watch(selectedLineIds, loadCurves, { deep: true })
 
 onMounted(async () => {
+  await loadMeta()
   lines.value = await lineApi.list()
   const fromQuery = String(route.query.lines || '')
     .split(',')
@@ -247,7 +274,7 @@ onMounted(async () => {
 <style scoped>
 .compare-layout {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   min-height: 520px;
 }
 
@@ -266,11 +293,20 @@ onMounted(async () => {
 
 .picker-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 6px 8px;
   border-radius: 9px;
   cursor: pointer;
+}
+
+.picker-item :deep(.el-checkbox) {
+  height: 18px;
+  margin-top: 1px;
+}
+
+.picker-item .swatch {
+  margin-top: 5px;
 }
 
 .picker-item:hover {
@@ -281,13 +317,60 @@ onMounted(async () => {
   background: var(--ct-primary-soft);
 }
 
-.picker-name {
-  font-size: 13px;
+.picker-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+/* 细胞株名必须完整可读：允许换行，不做省略号截断 */
+.picker-name {
+  font-size: 13px;
+  line-height: 18px;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.picker-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  line-height: 16px;
+}
+
+/* 物种小标签：同物种共用色系，便于一眼分辨分组 */
+.picker-species {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  line-height: 17px;
   white-space: nowrap;
+}
+
+.swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+
+.line-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 表格内长名称换行完整显示，不用省略号 */
+.cell-wrap {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
 }
 
 .compare-main {

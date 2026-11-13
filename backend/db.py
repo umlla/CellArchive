@@ -34,7 +34,8 @@ SCHEMA_STATEMENTS = (
         revival_date TEXT,
         type TEXT,
         default_passage_interval INTEGER DEFAULT 0,
-        notes TEXT
+        notes TEXT,
+        species TEXT
     )
     """,
     """
@@ -180,6 +181,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(cell_group_members)")}
     if "sort_order" not in columns:
         conn.execute("ALTER TABLE cell_group_members ADD COLUMN sort_order INTEGER DEFAULT 0")
+    # 兼容旧库：细胞株的物种标签（用于图表配色分组）
+    line_columns = {row["name"] for row in conn.execute("PRAGMA table_info(cell_lines)")}
+    if "species" not in line_columns:
+        conn.execute("ALTER TABLE cell_lines ADD COLUMN species TEXT")
     for statement in INDEX_STATEMENTS:
         conn.execute(statement)
     set_meta(conn, "schema_version", str(SCHEMA_VERSION))

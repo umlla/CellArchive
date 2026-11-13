@@ -16,7 +16,16 @@ from .auth import current_username
 from .config import Config
 from .domain import END_REASONS
 from .errors import ApiError, NotFound, ValidationError
-from .services import analytics, batches, excelio, groups, lines, maintenance, records, vials
+from .services import (
+    analytics,
+    batches,
+    excelio,
+    groups,
+    lines,
+    maintenance,
+    records,
+    vials,
+)
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -125,7 +134,29 @@ def meta():
         "migration": _migration_summary(report),
         "backup_count": len(maintenance.list_backups(config)),
         "today": date.today().isoformat(),
+        "species_colors": species_palette(conn),
     })
+
+
+def species_palette(conn) -> dict[str, Any]:
+    """物种 → 色系，以及每个细胞株的固定颜色，供前端图例与图表统一取色。"""
+    from .services.palette import line_colors
+
+    colors = line_colors(conn)
+    species: dict[str, dict[str, Any]] = {}
+    for info in colors.values():
+        name = info["species"] or ""
+        entry = species.setdefault(name, {"species": name, "color": info["color"], "count": 0})
+        entry["count"] += 1
+    return {
+        "species": sorted(
+            species.values(), key=lambda value: (value["species"] == "", value["species"])
+        ),
+        "lines": [
+            {"cell_line_id": line_id, "species": info["species"], "color": info["color"]}
+            for line_id, info in sorted(colors.items())
+        ],
+    }
 
 
 def session_username(config: Config) -> str | None:
@@ -184,6 +215,44 @@ def update_cell_line(line_id: int):
 @write
 def delete_cell_line(line_id: int):
     return jsonify(lines.delete_line(get_db(), line_id, user=user()))
+
+
+@api_bp.post("/cell-lines/species")
+@write
+def assign_cell_line_species():
+    """批量写物种。
+
+    - entries: [{id, species}] 逐行写入（界面预览后确认用）
+    - 兼容旧用法：{species, line_ids?, only_unset?} 给一批细胞株统一打同一标签
+    """
+    payload = body()
+    conn = get_db()
+    entries = payload.get("entries")
+    if isinstance(entries, list):
+        updated = 0
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            line_id = entry.get("id", entry.get("cell_line_id"))
+            try:
+                line_id = int(line_id)
+            except (TypeError, ValueError):
+                continue
+            lines.update_line(conn, line_id, {"species": entry.get("species", "")}, user=user())
+            updated += 1
+        return jsonify({"updated": updated, "entries": updated})
+
+    raw_ids = payload.get("line_ids") or []
+    if not isinstance(raw_ids, list):
+        raise ValidationError("line_ids 必须是数组")
+    line_ids = [int(value) for value in raw_ids] if raw_ids else None
+    return jsonify(maintenance.assign_species(
+        conn,
+        payload.get("species"),
+        line_ids=line_ids,
+        only_unset=bool(payload.get("only_unset", True)),
+        user=user(),
+    ))
 
 
 @api_bp.get("/cell-lines/<int:line_id>/batches")
@@ -430,7 +499,11 @@ def group_records(group_id: int):
 
 @api_bp.get("/groups/<int:group_id>/rates")
 def group_rates(group_id: int):
-    return jsonify(analytics.group_rates(get_db(), group_id))
+    return jsonify(analytics.group_rates(
+        get_db(),
+        group_id,
+        include_ended=_bool_arg("include_ended", False),
+    ))
 
 
 @api_bp.get("/groups/<int:group_id>/curves")

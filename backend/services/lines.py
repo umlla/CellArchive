@@ -10,6 +10,7 @@ from ..domain import (
     normalize_choice,
     normalize_date,
     normalize_int,
+    normalize_species,
     normalize_text,
     today_iso,
 )
@@ -42,6 +43,8 @@ def _clean_payload(payload: dict[str, Any], *, partial: bool = False) -> dict[st
             raise ValidationError("细胞株名称过长（最多 120 字）")
     if not partial or "type" in payload:
         data["type"] = normalize_choice(payload.get("type"), LINE_TYPES, "细胞类型", default="永生化")
+    if not partial or "species" in payload:
+        data["species"] = normalize_species(payload.get("species"))
     if not partial or "revival_date" in payload:
         data["revival_date"] = normalize_date(payload.get("revival_date"), "复苏日期")
     if not partial or "default_passage_interval" in payload:
@@ -83,8 +86,10 @@ def create_line(conn: sqlite3.Connection, payload: dict[str, Any], user: str | N
     if not data.get("revival_date"):
         data["revival_date"] = today_iso()
     cursor = conn.execute(
-        "INSERT INTO cell_lines (name, revival_date, type, default_passage_interval, notes) VALUES (?,?,?,?,?)",
-        (data["name"], data["revival_date"], data["type"], data["default_passage_interval"], data["notes"]),
+        "INSERT INTO cell_lines (name, revival_date, type, default_passage_interval, notes, species) "
+        "VALUES (?,?,?,?,?,?)",
+        (data["name"], data["revival_date"], data["type"], data["default_passage_interval"],
+         data["notes"], data.get("species")),
     )
     line_id = int(cursor.lastrowid)
     audit(conn, user, "create", "cell_line", line_id, data)

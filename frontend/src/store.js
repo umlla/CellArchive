@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { authApi, metaApi, onUnauthorized } from './api'
+import { registerSpeciesColors } from './charts'
 
 export const store = reactive({
   ready: false,
@@ -31,6 +32,8 @@ export async function refreshAuth() {
 
 export async function loadMeta() {
   store.meta = await metaApi.meta()
+  // 物种配色表随元信息一起加载，保证所有图表取到同一套颜色
+  registerSpeciesColors(store.meta?.species_colors)
   return store.meta
 }
 

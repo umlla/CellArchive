@@ -5,9 +5,22 @@
         <h2>冻存管管理</h2>
         <p class="sub">共 {{ boxes.length }} 个冻存盒 · 9×9 孔位，点击孔位可查看或添加冻存管</p>
       </div>
-      <el-button type="primary" @click="openAdd()">
-        <el-icon><Plus /></el-icon>添加冻存管
-      </el-button>
+      <div class="row" style="gap: 10px">
+        <!-- 待填位置数量常驻显示，切到任何页签都看得到 -->
+        <el-button
+          v-if="pendingCount"
+          size="small"
+          type="warning"
+          plain
+          @click="showUnplaced"
+        >
+          {{ pendingCount }} 支待录入位置
+        </el-button>
+        <span v-else class="small faint">位置已全部录入</span>
+        <el-button type="primary" @click="openAdd()">
+          <el-icon><Plus /></el-icon>添加冻存管
+        </el-button>
+      </div>
     </div>
 
     <el-tabs v-model="tab" class="vial-tabs" @tab-change="onTabChange">
@@ -21,9 +34,6 @@
             已占用 {{ boxDetail.occupied }} 孔 · 空闲 {{ boxDetail.capacity - boxDetail.occupied }} 孔
           </span>
           <div style="margin-left: auto" class="row">
-            <el-button v-if="pendingCount" size="small" type="warning" plain @click="showUnplaced">
-              {{ pendingCount }} 支待填位置
-            </el-button>
             <span class="legend"><i class="dot in-stock" />在库</span>
             <span class="legend"><i class="dot revived" />已复苏</span>
             <span class="legend"><i class="dot discarded" />已丢弃</span>
@@ -55,7 +65,13 @@
           <span class="small faint">显示 {{ searchResults.length }} 条，最多 500 条</span>
         </div>
 
-        <el-table :data="searchResults" size="small" max-height="560">
+        <el-table
+          :data="searchResults"
+          size="small"
+          max-height="560"
+          class="vial-table"
+          @row-click="openEdit"
+        >
           <el-table-column label="位置" min-width="170" show-overflow-tooltip>
             <template #default="{ row }">
               <span v-if="row.location">{{ row.location }}</span>
@@ -78,8 +94,9 @@
           <el-table-column prop="notes" label="备注" min-width="120" show-overflow-tooltip />
           <el-table-column label="操作" width="120" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-              <el-button link type="danger" size="small" @click="removeVial(row)">删除</el-button>
+              <!-- 整行可点即编辑，按钮需阻止冒泡，避免点删除时同时弹出编辑框 -->
+              <el-button link type="primary" size="small" @click.stop="openEdit(row)">编辑</el-button>
+              <el-button link type="danger" size="small" @click.stop="removeVial(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -427,6 +444,8 @@ onMounted(async () => {
   if (route.query.unplaced) {
     tab.value = 'search'
     onlyUnplaced.value = true
+    // 从首页「待录入位置」卡片跳来时，口径限定在库（卡片只统计在库的管）
+    if (route.query.status) statusFilter.value = String(route.query.status)
     await searchVials()
   }
 })
@@ -449,6 +468,15 @@ onMounted(async () => {
 .unplaced-tag {
   color: var(--ct-warning);
   font-size: 12px;
+}
+
+/* 整行可点即编辑：手型光标 + 悬停高亮，让「能点」一眼可见 */
+.vial-table :deep(.el-table__body tr) {
+  cursor: pointer;
+}
+
+.vial-table :deep(.el-table__body tr:hover > td.el-table__cell) {
+  background: var(--ct-primary-soft, #eef7f5);
 }
 
 .legend .dot {

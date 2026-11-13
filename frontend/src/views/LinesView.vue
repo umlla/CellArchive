@@ -5,9 +5,14 @@
         <h2>细胞株管理</h2>
         <p class="sub">共 {{ lines.length }} 株，其中 {{ activeCount }} 株正在培养</p>
       </div>
-      <el-button type="primary" @click="openCreate">
-        <el-icon><Plus /></el-icon>添加细胞株
-      </el-button>
+      <div class="row">
+        <el-button :disabled="!unlabeledCount" @click="openBulkSpecies">
+          批量标注标签<template v-if="unlabeledCount">（{{ unlabeledCount }}）</template>
+        </el-button>
+        <el-button type="primary" @click="openCreate">
+          <el-icon><Plus /></el-icon>添加细胞株
+        </el-button>
+      </div>
     </div>
 
     <div class="panel-body">
@@ -25,6 +30,14 @@
               <span class="dot" :class="{ on: row.active_batch_count > 0 }" />
               <span class="name">{{ row.name }}</span>
             </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="标签" width="118" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="species-tag" :style="{ '--tag-color': speciesColor(row.species) }">
+              <i class="swatch" />
+              {{ row.species || '未标注' }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column label="类型" width="90">
@@ -58,6 +71,47 @@
       </el-table>
     </div>
 
+    <el-dialog v-model="bulkVisible" title="批量标注标签" width="min(720px, 96vw)">
+      <div class="small faint" style="margin-bottom: 10px">
+        标签不预设含义，填什么就是什么；同一标签的细胞株自动用同一色系。
+        输入时只会提示你已经用过的标签。
+      </div>
+
+      <div class="row" style="margin-bottom: 10px; gap: 8px; flex-wrap: wrap">
+        <span class="small faint">
+          共 {{ suggestions.length }} 株 · 未填 {{ unlabeledCount }} 株
+        </span>
+      </div>
+
+      <el-table :data="suggestions" size="small" max-height="380">
+        <el-table-column prop="name" label="细胞株" min-width="180" show-overflow-tooltip />
+        <el-table-column label="标签" width="200">
+          <template #default="{ row }">
+            <el-autocomplete
+              v-model="row.suggested"
+              :fetch-suggestions="querySpecies"
+              size="small"
+              clearable
+              placeholder="填写标签"
+              style="width: 100%"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="颜色" width="80" align="center">
+          <template #default="{ row }">
+            <i class="swatch" :style="{ '--tag-color': speciesColor(row.suggested) }" />
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <template #footer>
+        <el-button @click="bulkVisible = false">取消</el-button>
+        <el-button type="primary" :loading="bulkSaving" @click="saveBulkSpecies">
+          确认写入 {{ suggestions.filter((row) => row.suggested).length }} 株
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑细胞株' : '添加细胞株'" width="min(540px, 94vw)">
       <el-form :model="form" label-width="120px" label-position="left">
         <el-form-item label="名称" required>
@@ -68,6 +122,24 @@
             <el-option label="永生化" value="永生化" />
             <el-option label="原代" value="原代" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="标签">
+          <el-autocomplete
+            v-model="form.species"
+            :fetch-suggestions="querySpecies"
+            clearable
+            placeholder="自由填写，例如 抹香鲸 / 小抹香鲸 / 人"
+            style="width: 100%"
+          >
+            <template #default="{ item }">
+              <span class="species-tag" :style="{ '--tag-color': speciesColor(item.value) }">
+                <i class="swatch" />{{ item.value }}
+              </span>
+            </template>
+          </el-autocomplete>
+          <div class="small faint" style="margin-top: 4px">
+            标签不预设含义，填什么都行；同一标签的细胞株在图表中用相近颜色，不同标签颜色明显区分
+          </div>
         </el-form-item>
         <el-form-item label="首次复苏日期">
           <el-date-picker v-model="form.revival_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
@@ -92,6 +164,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { lineApi } from '../api'
+import { speciesColor } from '../charts'
 import { loadMeta } from '../store'
 import { todayISO } from '../utils'
 
@@ -101,6 +174,26 @@ const dialogVisible = ref(false)
 const editing = ref(false)
 const saving = ref(false)
 const form = ref(emptyForm())
+
+const bulkVisible = ref(false)
+const suggestions = ref([])
+const bulkSaving = ref(false)
+
+const unlabeledCount = computed(() => lines.value.filter((line) => !line.species).length)
+
+// 物种不预设：候选只来自「当前已用过的标签」，输入新词也能直接生效
+const knownSpecies = computed(() => {
+  const used = lines.value.map((line) => line.species).filter(Boolean)
+  return [...new Set(used)].sort()
+})
+
+function querySpecies(queryString, callback) {
+  const keyword = (queryString || '').trim().toLowerCase()
+  const items = knownSpecies.value
+    .filter((name) => !keyword || name.toLowerCase().includes(keyword))
+    .map((name) => ({ value: name }))
+  callback(items)
+}
 
 const activeCount = computed(() => lines.value.filter((line) => line.active_batch_count > 0).length)
 const filteredLines = computed(() => {
@@ -118,6 +211,7 @@ function emptyForm() {
     id: null,
     name: '',
     type: '永生化',
+    species: '',
     revival_date: todayISO(),
     default_passage_interval: 0,
     notes: '',
@@ -141,6 +235,7 @@ function openEdit(row) {
     id: row.id,
     name: row.name,
     type: row.type || '永生化',
+    species: row.species || '',
     revival_date: row.revival_date,
     default_passage_interval: row.default_passage_interval || 0,
     notes: row.notes || '',
@@ -166,6 +261,36 @@ async function save() {
     await reload()
   } finally {
     saving.value = false
+  }
+}
+
+function openBulkSpecies() {
+  // 标签完全由用户填写，这里只列出所有细胞株，不做任何推断
+  suggestions.value = lines.value.map((line) => ({
+    cell_line_id: line.id,
+    name: line.name,
+    species: line.species || '',
+    suggested: line.species || '',
+  }))
+  bulkVisible.value = true
+}
+
+async function saveBulkSpecies() {
+  const entries = suggestions.value
+    .filter((row) => row.suggested && row.suggested !== row.species)
+    .map((row) => ({ id: row.cell_line_id, species: row.suggested }))
+  if (!entries.length) {
+    ElMessage.info('没有需要更新的标签')
+    return
+  }
+  bulkSaving.value = true
+  try {
+    const result = await lineApi.assignSpecies({ entries })
+    ElMessage.success(`已更新 ${result.updated} 株细胞株的标签`)
+    bulkVisible.value = false
+    await reload()
+  } finally {
+    bulkSaving.value = false
   }
 }
 
@@ -208,6 +333,29 @@ onMounted(reload)
 
 .name {
   font-weight: 550;
+}
+
+/* 物种标签：左侧色块就是该物种在图表中的色系，一眼对应 */
+.species-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 9px 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tag-color) 12%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--tag-color) 30%, #ffffff);
+  color: color-mix(in srgb, var(--tag-color) 78%, #111827);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tag-color);
+  flex: none;
 }
 
 .badge {

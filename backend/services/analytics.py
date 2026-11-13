@@ -9,6 +9,7 @@ from typing import Any
 from ..domain import remaining_days
 from ..errors import ValidationError
 from . import fetch_all, get_or_404, placeholders
+from .palette import lighten, resolver
 
 
 def _find_baseline(records: list[dict[str, Any]], start_date: str) -> dict[str, Any] | None:
@@ -46,6 +47,11 @@ def dashboard(conn: sqlite3.Connection) -> dict[str, Any]:
     total_groups = scalar("SELECT COUNT(*) FROM cell_groups")
     total_vials = scalar("SELECT COUNT(*) FROM frozen_vials")
     in_stock_vials = scalar("SELECT COUNT(*) FROM frozen_vials WHERE status = '在库'")
+    # 待录入位置：还在库但没填位置，需要去冻存管页面补孔位
+    unplaced_vials = scalar(
+        "SELECT COUNT(*) FROM frozen_vials "
+        "WHERE status = '在库' AND (location IS NULL OR TRIM(location) = '')"
+    )
     total_records = scalar("SELECT COUNT(*) FROM culture_records")
     recent_records = scalar(
         "SELECT COUNT(*) FROM culture_records WHERE date >= ?", (week_ago,)
@@ -102,6 +108,7 @@ def dashboard(conn: sqlite3.Connection) -> dict[str, Any]:
             "total_groups": total_groups,
             "total_vials": total_vials,
             "in_stock_vials": in_stock_vials,
+            "unplaced_vials": unplaced_vials,
             "total_records": total_records,
             "records_last_7_days": recent_records,
         },
@@ -124,12 +131,18 @@ def _active_member_ids(conn: sqlite3.Connection, group_id: int) -> list[int]:
     ]
 
 
-def group_rates(conn: sqlite3.Connection, group_id: int) -> list[dict[str, Any]]:
-    """组内每个活跃批次的增殖速度，用于比较不同细胞株的快慢。
+def group_rates(
+    conn: sqlite3.Connection,
+    group_id: int,
+    *,
+    include_ended: bool = False,
+) -> list[dict[str, Any]]:
+    """组内批次的增殖速度，用于比较不同细胞株的快慢。
 
     主要指标是「整段 PD/天」：首末两条记录之间的累计 PD ÷ 跨度天数，
     单次计数误差会被平均掉，最适合判断两株细胞增殖速度是否有差异。
     同时给出平均 PD/天（各区间算术平均）、对应倍增时间、区间数与稳定度。
+    include_ended 为真时同时返回已终止批次，便于把历史批次放在同一张图里比较。
     """
     member_ids = _active_member_ids(conn, group_id)
     if not member_ids:
@@ -137,18 +150,27 @@ def group_rates(conn: sqlite3.Connection, group_id: int) -> list[dict[str, Any]]
     batches = fetch_all(
         conn,
         f"""
-        SELECT cb.id AS batch_id, cb.batch_name, cl.name AS cell_line, cl.id AS cell_line_id,
+        SELECT cb.id AS batch_id, cb.batch_name, cb.is_active AS is_active,
+               cl.name AS cell_line, cl.id AS cell_line_id, cl.species,
                gm.sort_order
         FROM culture_batches cb
         JOIN cell_lines cl ON cl.id = cb.cell_line_id
         LEFT JOIN cell_group_members gm ON gm.group_id = ? AND gm.cell_line_id = cb.cell_line_id
-        WHERE cb.is_active = 1 AND cb.cell_line_id IN ({placeholders(member_ids)})
-        ORDER BY COALESCE(gm.sort_order, 9999), cl.name, cb.batch_name
+        WHERE (cb.is_active = 1 OR ? = 1) AND cb.cell_line_id IN ({placeholders(member_ids)})
+        ORDER BY cb.is_active DESC, COALESCE(gm.sort_order, 9999), cl.name, cb.batch_name
         """,
-        (group_id, *member_ids),
+        (group_id, 1 if include_ended else 0, *member_ids),
     )
+    # 同一细胞株多个批次时，颜色一致，只靠深浅区分（越新的批次越深）
+    seen: dict[int, int] = {}
+    resolve_color = resolver(conn)
     results: list[dict[str, Any]] = []
     for batch in batches:
+        line_id = int(batch["cell_line_id"])
+        base_color = resolve_color(batch["species"], line_id)
+        index = seen.get(line_id, 0)
+        seen[line_id] = index + 1
+        batch["color"] = base_color if index == 0 else lighten(base_color, 0.18 * index)
         records = fetch_all(
             conn,
             "SELECT date, pd, cumulative_pd FROM culture_records WHERE batch_id = ? "
@@ -250,7 +272,7 @@ def compare_curves(
         conn,
         f"""
         SELECT cb.id AS batch_id, cb.batch_name, cb.revival_date, cb.is_active,
-               cl.id AS cell_line_id, cl.name AS cell_line
+               cl.id AS cell_line_id, cl.name AS cell_line, cl.species
         FROM culture_batches cb JOIN cell_lines cl ON cl.id = cb.cell_line_id
         WHERE cl.id IN ({placeholders(line_ids)})
         ORDER BY cl.name, cb.revival_date DESC, cb.id DESC
@@ -270,6 +292,9 @@ def compare_curves(
     series: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     all_dates: set[str] = set()
+    # 同一细胞株的多个批次共用该细胞株颜色，靠深浅/线型区分
+    line_batch_index: dict[int, int] = {}
+    resolve_color = resolver(conn)
 
     for batch in candidates:
         records = fetch_all(
@@ -346,11 +371,17 @@ def compare_curves(
         else:
             overall = None
 
+        line_id = int(batch["cell_line_id"])
+        index = line_batch_index.get(line_id, 0)
+        line_batch_index[line_id] = index + 1
+        base_color = resolve_color(batch["species"], line_id)
         series.append({
             "batch_id": batch["batch_id"],
             "batch_name": batch["batch_name"],
             "cell_line": batch["cell_line"],
             "cell_line_id": batch["cell_line_id"],
+            "species": batch["species"],
+            "color": base_color if index == 0 else lighten(base_color, 0.18 * index),
             "ended": not bool(batch["is_active"]),
             "name": batch["batch_name"],
             "points": points,
@@ -397,22 +428,28 @@ def group_curves(
     active_batches = fetch_all(
         conn,
         f"""
-        SELECT cb.id AS batch_id, cb.batch_name, cl.name AS cell_line, 0 AS ended
+        SELECT cb.id AS batch_id, cb.batch_name, cl.id AS cell_line_id, cl.name AS cell_line,
+               cl.species, 0 AS ended
         FROM culture_batches cb JOIN cell_lines cl ON cl.id = cb.cell_line_id
         WHERE cb.is_active = 1 AND cb.cell_line_id IN ({placeholders(member_ids)})
-        ORDER BY cl.name, cb.batch_name, cb.id
+        ORDER BY COALESCE((SELECT gm.sort_order FROM cell_group_members gm
+                           WHERE gm.group_id = ? AND gm.cell_line_id = cl.id), 9999),
+                 cl.name, cb.batch_name, cb.id
         """,
-        tuple(member_ids),
+        (*member_ids, group_id),
     )
     ended_batches = fetch_all(
         conn,
         f"""
-        SELECT cb.id AS batch_id, cb.batch_name, cl.name AS cell_line, 1 AS ended
+        SELECT cb.id AS batch_id, cb.batch_name, cl.id AS cell_line_id, cl.name AS cell_line,
+               cl.species, 1 AS ended
         FROM culture_batches cb JOIN cell_lines cl ON cl.id = cb.cell_line_id
         WHERE cb.is_active = 0 AND cb.cell_line_id IN ({placeholders(member_ids)})
-        ORDER BY cl.name, cb.batch_name, cb.id
+        ORDER BY COALESCE((SELECT gm.sort_order FROM cell_group_members gm
+                           WHERE gm.group_id = ? AND gm.cell_line_id = cl.id), 9999),
+                 cl.name, cb.batch_name, cb.id
         """,
-        tuple(member_ids),
+        (*member_ids, group_id),
     )
     ended_lookup = {int(row["batch_id"]): row for row in ended_batches}
 
@@ -429,6 +466,8 @@ def group_curves(
     series: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     all_dates: set[str] = set()
+    line_batch_index: dict[int, int] = {}
+    resolve_color = resolver(conn)
 
     for batch in all_batches:
         records = fetch_all(
@@ -469,10 +508,17 @@ def group_curves(
                 point["value"] = _normalized_value(point["cumulative_pd"], base)
                 point["fold"] = point["value"]
 
+        line_id = int(batch["cell_line_id"])
+        index = line_batch_index.get(line_id, 0)
+        line_batch_index[line_id] = index + 1
+        base_color = resolve_color(batch["species"], line_id)
         series.append({
             "batch_id": batch["batch_id"],
             "batch_name": batch["batch_name"],
             "cell_line": batch["cell_line"],
+            "cell_line_id": line_id,
+            "species": batch["species"],
+            "color": base_color if index == 0 else lighten(base_color, 0.18 * index),
             "name": name,
             "ended": bool(batch["ended"]),
             "points": points,
@@ -484,7 +530,9 @@ def group_curves(
         "normalize": normalize,
         "start_date": start_date,
         "ended_batches": [
-            {"batch_id": row["batch_id"], "batch_name": row["batch_name"], "cell_line": row["cell_line"]}
+            {"batch_id": row["batch_id"], "batch_name": row["batch_name"],
+             "cell_line": row["cell_line"], "cell_line_id": row["cell_line_id"],
+             "species": row["species"], "color": resolve_color(row["species"], row["cell_line_id"])}
             for row in ended_batches
         ],
         "skipped": skipped,

@@ -62,6 +62,7 @@ export const lineApi = {
   create: (payload) => http.post('/cell-lines', payload),
   update: (id, payload) => http.patch(`/cell-lines/${id}`, payload),
   remove: (id) => http.delete(`/cell-lines/${id}`),
+  assignSpecies: (payload) => http.post('/cell-lines/species', payload),
   batches: (id, includeEnded = true) =>
     http.get(`/cell-lines/${id}/batches`, { params: { include_ended: includeEnded } }),
   vials: (id) => http.get(`/cell-lines/${id}/vials`),
@@ -108,7 +109,7 @@ export const groupApi = {
   setMembers: (id, memberIds) => http.put(`/groups/${id}/members`, { members: memberIds }),
   status: (id) => http.get(`/groups/${id}/status`),
   records: (id) => http.get(`/groups/${id}/records`),
-  rates: (id) => http.get(`/groups/${id}/rates`),
+  rates: (id, params) => http.get(`/groups/${id}/rates`, { params }),
   curves: (id, params) => http.get(`/groups/${id}/curves`, { params }),
   createBatches: (id, payload) => http.post(`/groups/${id}/batches`, payload),
   terminate: (id, reason) => http.post(`/groups/${id}/terminate`, { reason }),

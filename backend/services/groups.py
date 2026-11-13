@@ -17,7 +17,7 @@ def list_groups(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         return groups
     members = fetch_all(
         conn,
-        "SELECT gm.group_id, gm.cell_line_id, gm.sort_order, cl.name, cl.type, "
+        "SELECT gm.group_id, gm.cell_line_id, gm.sort_order, cl.name, cl.type, cl.species, "
         "  (SELECT COUNT(*) FROM culture_batches b WHERE b.cell_line_id = cl.id AND b.is_active = 1) AS active_batch_count "
         "FROM cell_group_members gm JOIN cell_lines cl ON cl.id = gm.cell_line_id "
         "ORDER BY gm.group_id, gm.sort_order, cl.name",
@@ -28,6 +28,7 @@ def list_groups(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             "cell_line_id": int(member["cell_line_id"]),
             "name": member["name"],
             "type": member["type"],
+            "species": member["species"],
             "sort_order": int(member["sort_order"] or 0),
             "active_batch_count": int(member["active_batch_count"] or 0),
         })
@@ -41,7 +42,8 @@ def get_group(conn: sqlite3.Connection, group_id: int) -> dict[str, Any]:
     group = get_or_404(conn, "cell_groups", group_id, "细胞组")
     group["members"] = fetch_all(
         conn,
-        "SELECT gm.cell_line_id, gm.sort_order, cl.name, cl.type FROM cell_group_members gm "
+        "SELECT gm.cell_line_id, gm.sort_order, cl.name, cl.type, cl.species "
+        "FROM cell_group_members gm "
         "JOIN cell_lines cl ON cl.id = gm.cell_line_id WHERE gm.group_id = ? "
         "ORDER BY gm.sort_order, cl.name",
         (group_id,),
@@ -141,7 +143,8 @@ def group_status(conn: sqlite3.Connection, group_id: int) -> list[dict[str, Any]
         conn,
         f"""
         SELECT cb.id AS batch_id, cb.batch_name, cb.revival_date, cb.initial_pd,
-               cl.id AS cell_line_id, cl.name AS cell_name, cl.type, cl.default_passage_interval,
+               cl.id AS cell_line_id, cl.name AS cell_name, cl.type, cl.species,
+               cl.default_passage_interval,
                gm.sort_order,
                cr.id AS record_id, cr.passage, cr.date AS last_passage,
                cr.inoculum_cells, cr.inoculum_dishes, cr.harvested_cells,

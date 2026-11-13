@@ -237,7 +237,9 @@ const current = computed(() => {
 
 const remaining = computed(() => remainingMeta(daysFromToday(current.value?.next_passage_date)))
 
-const growthOption = computed(() => batchGrowthOption(records.value, props.batch.batch_name))
+const growthOption = computed(() =>
+  batchGrowthOption(records.value, props.batch.batch_name, props.batch.cell_line_id),
+)
 
 async function loadDetail() {
   detailLoading.value = true

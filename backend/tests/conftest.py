@@ -75,14 +75,18 @@ def auth_app(auth_config: Config):
 # --------------------------------------------------------------------------
 # 常用构造助手
 # --------------------------------------------------------------------------
-def create_line(client, name="测试细胞", type_="永生化", interval=2, revival_date="2026-01-01"):
-    response = client.post("/api/cell-lines", json={
+def create_line(client, name="测试细胞", type_="永生化", interval=2, revival_date="2026-01-01",
+                species=None):
+    payload = {
         "name": name,
         "type": type_,
         "revival_date": revival_date,
         "default_passage_interval": interval,
         "notes": "测试",
-    })
+    }
+    if species is not None:
+        payload["species"] = species
+    response = client.post("/api/cell-lines", json=payload)
     assert response.status_code == 201, response.get_json()
     return response.get_json()
 

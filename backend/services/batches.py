@@ -20,7 +20,8 @@ from ..errors import Conflict, NotFound, ValidationError
 from . import audit, fetch_all, fetch_one, get_or_404, require_non_empty
 
 BATCH_SELECT = """
-SELECT cb.*, cl.name AS cell_name, cl.type AS cell_type, cl.default_passage_interval,
+SELECT cb.*, cl.name AS cell_name, cl.type AS cell_type, cl.species AS cell_species,
+    cl.default_passage_interval,
     (SELECT COUNT(*) FROM culture_records r WHERE r.batch_id = cb.id) AS records_count,
     (SELECT id FROM culture_records r WHERE r.batch_id = cb.id AND r.is_active = 1
         ORDER BY r.date DESC, r.id DESC LIMIT 1) AS active_record_id,

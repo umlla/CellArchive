@@ -29,6 +29,7 @@ DATE_FORMATS = (
 
 STATUS_CHOICES = ("良好", "一般", "较差", "污染")
 LINE_TYPES = ("永生化", "原代")
+# 物种标签不预设任何固定选项：完全由使用者自由填写，配色按标签自动分色系
 VIAL_STATUSES = ("在库", "已复苏", "已丢弃")
 END_REASONS = ("污染", "全部冻存", "丢弃", "实验结束", "其他")
 
@@ -162,6 +163,12 @@ def normalize_choice(value: Any, choices: Iterable[str], field: str, default: st
     if text not in choices:
         raise ValidationError(f"{field}必须是 {'/'.join(choices)} 之一")
     return text
+
+
+def normalize_species(value: Any) -> str | None:
+    """物种标签：完全自由填写，不做任何预设或归一，只去掉首尾空白。"""
+    text = normalize_text(value, max_length=40)
+    return text or None
 
 
 # --------------------------------------------------------------------------

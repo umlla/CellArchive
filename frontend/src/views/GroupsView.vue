@@ -41,15 +41,17 @@
         </div>
 
         <div class="member-tags">
-          <el-tag
+          <span
             v-for="member in group.members"
             :key="member.cell_line_id"
-            size="small"
-            effect="plain"
-            :type="member.active_batch_count ? 'success' : 'info'"
+            class="member-chip"
+            :class="{ idle: !member.active_batch_count }"
+            :style="{ '--chip-color': lineColor(member.cell_line_id) }"
           >
+            <i class="swatch" />
             {{ member.name }}
-          </el-tag>
+            <em v-if="member.species">{{ member.species }}</em>
+          </span>
           <span v-if="!group.members.length" class="small faint">暂无成员</span>
         </div>
 
@@ -92,8 +94,10 @@
       <div v-if="members.length" class="member-list">
         <div v-for="(member, index) in members" :key="member.cell_line_id" class="member-row">
           <span class="index">{{ index + 1 }}</span>
+          <i class="swatch" :style="{ background: lineColor(member.cell_line_id) }" />
           <span class="member-name">{{ member.name }}</span>
           <el-tag size="small" effect="plain" type="info">{{ member.type || '—' }}</el-tag>
+          <el-tag v-if="member.species" size="small" effect="plain">{{ member.species }}</el-tag>
           <div class="row" style="margin-left: auto; gap: 2px">
             <el-button text circle size="small" :disabled="index === 0" @click="move(index, -1)">
               <el-icon><Top /></el-icon>
@@ -115,7 +119,7 @@
           <el-option
             v-for="line in addableLines"
             :key="line.id"
-            :label="`${line.name}（${line.type || '未分类'}）`"
+            :label="`${line.name}${line.species ? `（${line.species}）` : ''}`"
             :value="line.id"
           />
         </el-select>
@@ -135,6 +139,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { groupApi, lineApi } from '../api'
+import { lineColor } from '../charts'
 import { loadMeta } from '../store'
 
 const router = useRouter()
@@ -167,8 +172,8 @@ const visibleGroups = computed(() =>
 )
 
 async function reload() {
+  await loadMeta() // 先拿到物种配色表，再渲染带色点的成员标签
   groups.value = await groupApi.list()
-  await loadMeta()
 }
 
 function openCreate() {
@@ -241,7 +246,12 @@ async function openMembers(group) {
 function addMember() {
   const line = lines.value.find((item) => item.id === lineToAdd.value)
   if (!line) return
-  members.value.push({ cell_line_id: line.id, name: line.name, type: line.type })
+  members.value.push({
+    cell_line_id: line.id,
+    name: line.name,
+    type: line.type,
+    species: line.species,
+  })
   lineToAdd.value = null
 }
 
@@ -311,6 +321,39 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 5px;
   min-height: 22px;
+}
+
+/* 成员标签带细胞株色点，颜色与组看板图表一致 */
+.member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 9px 1px 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 20px;
+  background: color-mix(in srgb, var(--chip-color) 11%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--chip-color) 32%, #ffffff);
+  color: color-mix(in srgb, var(--chip-color) 76%, #111827);
+  white-space: nowrap;
+}
+
+.member-chip.idle {
+  opacity: 0.55;
+}
+
+.member-chip em {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--chip-color, #94a3b8);
 }
 
 .notes {
