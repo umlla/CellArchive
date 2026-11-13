@@ -45,6 +45,8 @@ func (a *App) handleMeta(w http.ResponseWriter, r *http.Request) {
 	payload["migration"] = migrationSummary(readMigrationReport(a.cfg))
 	payload["backup_count"] = len(backups)
 	payload["today"] = todayISO()
+	// 标签配色表：前端所有图表共用这一套颜色
+	payload["species_colors"] = buildSpeciesPalette(r.Context(), a.store.DB())
 	writeJSON(w, http.StatusOK, payload)
 }
 
@@ -137,6 +139,69 @@ func (a *App) handleDeleteLine(w http.ResponseWriter, r *http.Request) {
 	}
 	a.runWrite(w, r, http.StatusOK, func(tx *sqlTx) (any, error) {
 		return deleteLine(r.Context(), tx, lineID, a.username(r))
+	})
+}
+
+// handleAssignSpecies 批量写标签。
+//   - entries: [{id, species}] 逐行写入（界面预览后确认用）
+//   - 兼容旧用法：{species, line_ids?, only_unset?} 给一批细胞株统一打同一标签
+func (a *App) handleAssignSpecies(w http.ResponseWriter, r *http.Request) {
+	a.runWrite(w, r, http.StatusOK, func(tx *sqlTx) (any, error) {
+		payload, err := readBody(r)
+		if err != nil {
+			return nil, err
+		}
+		ctx := r.Context()
+
+		if rawEntries, ok := payload["entries"]; ok {
+			entries, ok := rawEntries.([]any)
+			if !ok {
+				return nil, validationError("entries 必须是数组")
+			}
+			updated := 0
+			for _, raw := range entries {
+				entry, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				lineID, ok := asInt(entry["id"])
+				if !ok {
+					lineID, ok = asInt(entry["cell_line_id"])
+				}
+				if !ok || lineID <= 0 {
+					continue
+				}
+				if _, err := updateLine(ctx, tx, lineID, map[string]any{
+					"species": entry["species"],
+				}, a.username(r)); err != nil {
+					return nil, err
+				}
+				updated++
+			}
+			return map[string]any{"updated": updated, "entries": updated}, nil
+		}
+
+		species, _ := normalizeText(payload["species"], 40)
+		if species == "" {
+			return nil, validationError("标签不能为空")
+		}
+		var lineIDs []int64
+		if rawIDs, ok := payload["line_ids"]; ok {
+			list, ok := rawIDs.([]any)
+			if !ok {
+				return nil, validationError("line_ids 必须是数组")
+			}
+			for _, item := range list {
+				if id, ok := asInt(item); ok {
+					lineIDs = append(lineIDs, id)
+				}
+			}
+		}
+		onlyUnset := true
+		if raw, ok := payload["only_unset"]; ok {
+			onlyUnset = asBool(raw)
+		}
+		return assignSpecies(ctx, tx, species, lineIDs, onlyUnset, a.username(r))
 	})
 }
 

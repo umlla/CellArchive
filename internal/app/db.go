@@ -34,7 +34,8 @@ var schemaStatements = []string{
 		revival_date TEXT,
 		type TEXT,
 		default_passage_interval INTEGER DEFAULT 0,
-		notes TEXT
+		notes TEXT,
+		species TEXT
 	)`,
 	`CREATE TABLE IF NOT EXISTS culture_batches (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -315,6 +316,28 @@ func (s *Store) Swap(newFile string) error {
 	return nil
 }
 
+// tableHasColumn 检查某表是否已有指定列，用于旧库平滑升级。
+func tableHasColumn(ctx context.Context, db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
 func initSchema(db *sql.DB) error {
 	ctx := context.Background()
 	for _, statement := range schemaStatements {
@@ -343,6 +366,16 @@ func initSchema(db *sql.DB) error {
 	rows.Close()
 	if !hasSort {
 		if _, err := db.ExecContext(ctx, `ALTER TABLE cell_group_members ADD COLUMN sort_order INTEGER DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	// 兼容旧库：细胞株的标签列（用于图表配色分组）
+	hasSpecies, err := tableHasColumn(ctx, db, "cell_lines", "species")
+	if err != nil {
+		return err
+	}
+	if !hasSpecies {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE cell_lines ADD COLUMN species TEXT`); err != nil {
 			return err
 		}
 	}

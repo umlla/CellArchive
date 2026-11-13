@@ -55,6 +55,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/cell-lines/{id}", a.handleGetLine)
 	mux.HandleFunc("PATCH /api/cell-lines/{id}", a.handleUpdateLine)
 	mux.HandleFunc("DELETE /api/cell-lines/{id}", a.handleDeleteLine)
+	mux.HandleFunc("POST /api/cell-lines/species", a.handleAssignSpecies)
 	mux.HandleFunc("GET /api/cell-lines/{id}/batches", a.handleLineBatches)
 	mux.HandleFunc("GET /api/cell-lines/{id}/vials", a.handleLineVials)
 

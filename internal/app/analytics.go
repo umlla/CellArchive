@@ -25,6 +25,9 @@ func dashboard(ctx context.Context, q Querier) (map[string]any, error) {
 	totalGroups := scalar(`SELECT COUNT(*) FROM cell_groups`)
 	totalVials := scalar(`SELECT COUNT(*) FROM frozen_vials`)
 	inStockVials := scalar(`SELECT COUNT(*) FROM frozen_vials WHERE status = '在库'`)
+	// 待录入位置：还在库但没填位置，需要去冻存管页面补孔位
+	unplacedVials := scalar(`SELECT COUNT(*) FROM frozen_vials
+		WHERE status = '在库' AND (location IS NULL OR TRIM(location) = '')`)
 	totalRecords := scalar(`SELECT COUNT(*) FROM culture_records`)
 	recentRecords := scalar(`SELECT COUNT(*) FROM culture_records WHERE date >= ?`, weekAgo)
 
@@ -80,6 +83,7 @@ func dashboard(ctx context.Context, q Querier) (map[string]any, error) {
 			"total_groups":        totalGroups,
 			"total_vials":         totalVials,
 			"in_stock_vials":      inStockVials,
+			"unplaced_vials":      unplacedVials,
 			"total_records":       totalRecords,
 			"records_last_7_days": recentRecords,
 		},

@@ -29,6 +29,7 @@ type linePayload struct {
 	RevivalDate            *string
 	DefaultPassageInterval *int64
 	Notes                  *string
+	Species                *string
 }
 
 func cleanLinePayload(payload map[string]any, partial bool) (linePayload, error) {
@@ -74,6 +75,14 @@ func cleanLinePayload(payload map[string]any, partial bool) (linePayload, error)
 			return data, err
 		}
 		data.Notes = &value
+	}
+	// 标签是自由文本：不预设任何选项，用户填什么就是什么
+	if !partial || hasKey(payload, "species") {
+		value, err := normalizeText(payload["species"], 40)
+		if err != nil {
+			return data, err
+		}
+		data.Species = &value
 	}
 	return data, nil
 }
@@ -121,16 +130,20 @@ func createLine(ctx context.Context, q Querier, payload map[string]any, username
 	if data.Notes != nil {
 		notes = *data.Notes
 	}
+	species := ""
+	if data.Species != nil {
+		species = *data.Species
+	}
 	result, err := q.ExecContext(ctx,
-		`INSERT INTO cell_lines (name, revival_date, type, default_passage_interval, notes)
-		 VALUES (?,?,?,?,?)`, *data.Name, revival, *data.Type, interval, notes)
+		`INSERT INTO cell_lines (name, revival_date, type, default_passage_interval, notes, species)
+		 VALUES (?,?,?,?,?,?)`, *data.Name, revival, *data.Type, interval, notes, species)
 	if err != nil {
 		return nil, err
 	}
 	id, _ := result.LastInsertId()
 	if err := audit(ctx, q, username, "create", "cell_line", id, map[string]any{
 		"name": *data.Name, "type": *data.Type, "revival_date": revival,
-		"default_passage_interval": interval, "notes": notes,
+		"default_passage_interval": interval, "notes": notes, "species": species,
 	}); err != nil {
 		return nil, err
 	}
@@ -173,6 +186,10 @@ func updateLine(ctx context.Context, q Querier, lineID int64, payload map[string
 	if data.Notes != nil {
 		assignments = append(assignments, "notes = ?")
 		args = append(args, *data.Notes)
+	}
+	if data.Species != nil {
+		assignments = append(assignments, "species = ?")
+		args = append(args, *data.Species)
 	}
 	if len(assignments) > 0 {
 		args = append(args, lineID)
@@ -264,6 +281,50 @@ func lineVials(ctx context.Context, q Querier, lineID int64) ([]Row, error) {
 	return queryMaps(ctx, q,
 		`SELECT * FROM frozen_vials WHERE cell_line_id = ?
 		 ORDER BY COALESCE(freeze_date, '') DESC, location`, lineID)
+}
+
+// assignSpecies 批量给细胞株打标签。
+// onlyUnset 为真时只处理还没打标签的细胞株，不会覆盖已单独设置的值。
+func assignSpecies(ctx context.Context, q Querier, species string, lineIDs []int64,
+	onlyUnset bool, username any) (map[string]any, error) {
+	value := strings.TrimSpace(species)
+	if value == "" {
+		return nil, validationError("标签不能为空")
+	}
+
+	sql := `SELECT id, name FROM cell_lines WHERE 1 = 1`
+	args := []any{}
+	if len(lineIDs) > 0 {
+		placeholders := make([]string, len(lineIDs))
+		for i, id := range lineIDs {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		sql += " AND id IN (" + strings.Join(placeholders, ",") + ")"
+	}
+	if onlyUnset {
+		sql += " AND (species IS NULL OR TRIM(species) = '')"
+	}
+	sql += " ORDER BY id"
+
+	rows, err := queryMaps(ctx, q, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(rows))
+	for _, row := range rows {
+		lineID := rowInt(row, "id")
+		if _, err := q.ExecContext(ctx, `UPDATE cell_lines SET species = ? WHERE id = ?`, value, lineID); err != nil {
+			return nil, err
+		}
+		names = append(names, rowString(row, "name"))
+	}
+	if err := audit(ctx, q, username, "assign_species", "cell_line", nil, map[string]any{
+		"species": value, "updated": len(rows), "only_unset": onlyUnset,
+	}); err != nil {
+		return nil, err
+	}
+	return map[string]any{"species": value, "updated": len(rows), "names": names}, nil
 }
 
 func hasKey(payload map[string]any, key string) bool {
