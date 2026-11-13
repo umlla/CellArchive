@@ -52,7 +52,6 @@ if ($Frontend) {
         Remove-Item (Join-Path $root 'web\dist') -Recurse -Force
     }
     Copy-Item (Join-Path $root 'frontend\dist') (Join-Path $root 'web\dist') -Recurse
-    Copy-Item (Join-Path $root 'assets\app.ico') (Join-Path $root 'web\dist\favicon.ico') -Force
 }
 
 if (-not (Test-Path (Join-Path $root 'web\dist\index.html'))) {

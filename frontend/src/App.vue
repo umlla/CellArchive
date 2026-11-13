@@ -9,7 +9,6 @@
   <el-container v-else class="app-shell">
     <el-aside class="sidebar" :class="{ 'is-open': mobileOpen }" width="230px">
       <div class="brand">
-        <img class="brand-logo" src="/app-icon.png" alt="细胞档案" />
         <div class="brand-text">
           <strong>细胞档案</strong>
           <small>CellArchive</small>
