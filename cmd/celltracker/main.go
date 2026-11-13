@@ -46,7 +46,7 @@ func run() int {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Printf("CellTracker %s (%s/%s)\n", app.AppVersion, runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("CellArchive %s (%s/%s)\n", app.AppVersion, runtime.GOOS, runtime.GOARCH)
 		return 0
 	}
 
@@ -70,7 +70,7 @@ func run() int {
 	}
 
 	setupLogging(cfg)
-	log.Printf("CellTracker %s 启动，数据库：%s", app.AppVersion, cfg.DBPath)
+	log.Printf("CellArchive %s 启动，数据库：%s", app.AppVersion, cfg.DBPath)
 
 	if _, err := app.EnsureDatabase(cfg); err != nil {
 		log.Printf("初始化数据库失败：%v", err)
@@ -101,7 +101,7 @@ func run() int {
 			pause()
 			return 0
 		}
-		fmt.Printf("端口 %d 已被其他程序占用，CellTracker 无法启动。\n", cfg.Port)
+		fmt.Printf("端口 %d 已被其他程序占用，细胞档案 无法启动。\n", cfg.Port)
 		fmt.Println("请修改 config.json 的 port（例如 18601）后重试。")
 		pause()
 		return 1
@@ -168,10 +168,10 @@ func setupLogging(cfg *app.Config) {
 
 func printBanner(cfg *app.Config, localURL string, alreadyRunning bool) {
 	fmt.Println(strings.Repeat("=", 62))
-	fmt.Printf(" 🧬 CellTracker %s\n", app.AppVersion)
+	fmt.Printf(" 细胞档案 CellArchive %s\n", app.AppVersion)
 	fmt.Printf(" 数据库：%s\n", cfg.DBPath)
 	if alreadyRunning {
-		fmt.Printf(" CellTracker 已经在运行：%s\n", localURL)
+		fmt.Printf(" 细胞档案 已经在运行：%s\n", localURL)
 		fmt.Println(" 请直接用浏览器打开上面的地址。")
 	} else {
 		fmt.Printf(" 本机访问：%s  ← 复制到浏览器打开\n", localURL)
@@ -248,7 +248,7 @@ func openBrowser(cfg *app.Config, url string) {
 	if err != nil {
 		log.Printf("自动打开浏览器失败：%v，请手动访问 %s", err, url)
 		copyToClipboard(url)
-		notifyUser("CellTracker", "未能自动打开浏览器。\n请手动访问：\n"+url+"\n\n地址已复制到剪贴板。")
+		notifyUser("细胞档案", "未能自动打开浏览器。\n请手动访问：\n"+url+"\n\n地址已复制到剪贴板。")
 		return
 	}
 	log.Printf("已尝试打开浏览器：%s", url)

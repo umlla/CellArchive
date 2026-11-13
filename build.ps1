@@ -69,15 +69,15 @@ $env:GOARCH = 'amd64'
 $ldflags = '-s -w'
 
 Write-Host '[windows] 构建 64 位程序...'
-$winDir = Join-Path $release 'CellTracker-win64'
+$winDir = Join-Path $release 'CellArchive-win64'
 New-Item -ItemType Directory -Force -Path $winDir | Out-Null
-& $go build -trimpath -ldflags $ldflags -o (Join-Path $winDir 'CellTracker.exe') .\cmd\celltracker
+& $go build -trimpath -ldflags $ldflags -o (Join-Path $winDir 'CellArchive.exe') .\cmd\celltracker
 if ($LASTEXITCODE -ne 0) { exit 1 }
 Copy-Item README.md (Join-Path $winDir 'README.md') -Force
 Copy-Item LICENSE (Join-Path $winDir 'LICENSE') -Force
 Copy-Item config.example.json (Join-Path $winDir 'config.example.json') -Force
 Copy-Item packaging\README-win.txt (Join-Path $winDir 'README.txt') -Force
-New-ZipPackage -SourceDir $winDir -Destination (Join-Path $release "CellTracker-$version-win64.zip")
+New-ZipPackage -SourceDir $winDir -Destination (Join-Path $release "CellArchive-$version-win64.zip")
 
 Get-ChildItem $release -File | Where-Object { $_.Extension -in '.zip', '.exe' } | ForEach-Object {
     $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()

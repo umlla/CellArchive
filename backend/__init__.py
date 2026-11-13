@@ -15,12 +15,12 @@ from .errors import ApiError
 logger = logging.getLogger("celltracker")
 
 MISSING_FRONTEND_HTML = """<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>CellTracker 前端未构建</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>细胞档案 前端未构建</title>
 <style>body{font-family:system-ui,"Microsoft YaHei",sans-serif;max-width:720px;margin:80px auto;
 padding:0 24px;line-height:1.7;color:#1f2937}code{background:#f3f4f6;padding:2px 6px;border-radius:4px}
 h1{font-size:22px}.box{background:#fff7ed;border:1px solid #fed7aa;padding:16px;border-radius:10px}</style>
 </head><body>
-<h1>🧬 CellTracker v4 后端已启动</h1>
+<h1>细胞档案 CellArchive v4 后端已启动</h1>
 <div class="box">
 <p>前端静态文件还没有构建。<strong>推荐直接双击项目根目录的 <code>start.bat</code></strong>，
 它会自动安装依赖并构建前端。</p>
@@ -109,7 +109,7 @@ def create_app(config: Config | None = None) -> Flask:
             return send_file(candidate)
         return _serve_index(config)
 
-    logger.info("CellTracker %s 启动，数据库：%s", APP_VERSION, config.db_path)
+    logger.info("细胞档案 CellArchive %s 启动，数据库：%s", APP_VERSION, config.db_path)
     return app
 
 

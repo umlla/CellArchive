@@ -4,10 +4,10 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
-title CellTracker v4 · 细胞培养追踪
+title 细胞档案 CellArchive v4 · 细胞培养管理追踪
 
 echo ============================================================
-echo   🧬 CellTracker v4 · 细胞培养追踪系统
+echo   细胞档案 CellArchive v4 · 细胞培养管理追踪
 echo ============================================================
 echo.
 

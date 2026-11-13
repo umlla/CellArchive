@@ -1,6 +1,8 @@
-# 🧬 CellTracker · 细胞培养追踪
+# 细胞档案 CellArchive · 细胞培养管理追踪
 
-记录细胞株、培养批次、传代、冻存和生长曲线。程序跑在你自己电脑上，数据只存在本地。
+<img src="assets/app.png" width="96" alt="CellArchive 图标">
+
+**细胞档案（CellArchive）** 用于记录细胞株、培养批次、传代、冻存和生长曲线。程序跑在你自己电脑上，数据只存在本地。
 
 ## 界面预览
 
@@ -28,17 +30,17 @@
 **不需要安装 Python，也不需要安装 Node.js。**
 
 1. 打开 <https://github.com/umlla/celltracker/releases/latest>
-2. 下载 **`CellTracker-4.0.0-win64.zip`**
-3. 解压到一个**有写入权限**的文件夹，例如 `D:\CellTracker` 或桌面
+2. 下载 **`CellArchive-4.0.0-win64.zip`**
+3. 解压到一个**有写入权限**的文件夹，例如 `D:\CellArchive` 或桌面
    > ⚠️ 不要解压到 `C:\Program Files`，程序需要在同目录下创建数据文件
-4. 双击 **`CellTracker.exe`**
+4. 双击 **`CellArchive.exe`**
 5. 浏览器会自动打开；没有自动打开时，手动访问 <http://127.0.0.1:18600/>
 
 首次运行时如果弹出「Windows 已保护你的电脑」，点 **更多信息 → 仍要运行** 即可。
 
 ### 以后怎么用
 
-每次只需**双击同一个 `CellTracker.exe`**。
+每次只需**双击同一个 `CellArchive.exe`**。
 
 **用完怎么关**：关闭黑色命令行窗口，或在页面左下角点「退出程序」。
 
@@ -46,7 +48,7 @@
 
 ### 更新版本
 
-下载新版 zip，解压后**只替换 `CellTracker.exe`**，保留 `data` 和 `backups` 文件夹即可。
+下载新版 zip，解压后**只替换 `CellArchive.exe`**，保留 `data` 和 `backups` 文件夹即可。
 
 ---
 

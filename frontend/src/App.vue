@@ -9,10 +9,10 @@
   <el-container v-else class="app-shell">
     <el-aside class="sidebar" :class="{ 'is-open': mobileOpen }" width="230px">
       <div class="brand">
-        <span class="brand-mark">🧬</span>
+        <img class="brand-logo" src="/app-icon.png" alt="细胞档案" />
         <div class="brand-text">
-          <strong>CellTracker</strong>
-          <small>细胞培养追踪 v{{ store.meta?.app_version || '4' }}</small>
+          <strong>细胞档案</strong>
+          <small>CellArchive</small>
         </div>
       </div>
 
@@ -151,8 +151,8 @@ function backupNow() {
 async function quitApp() {
   try {
     await ElMessageBox.confirm(
-      '退出后需要重新启动 CellTracker 才能继续使用。',
-      '退出 CellTracker',
+      '退出后需要重新启动「细胞档案」才能继续使用。',
+      '退出 细胞档案',
       { type: 'warning', confirmButtonText: '退出', cancelButtonText: '取消' },
     )
   } catch {
@@ -175,8 +175,8 @@ function showShutdownScreen() {
   overlay.innerHTML = `
     <div class="shutdown-card">
       <div class="shutdown-mark">🧬</div>
-      <h2>CellTracker 已退出</h2>
-      <p>可以关闭此页面。下次使用请重新打开 CellTracker。</p>
+      <h2>细胞档案 已退出</h2>
+      <p>可以关闭此页面。下次使用请重新打开「细胞档案」。</p>
     </div>`
   document.body.appendChild(overlay)
 }

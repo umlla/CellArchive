@@ -129,6 +129,15 @@ a {
   padding: 4px 8px 18px;
 }
 
+/* 应用图标：与 exe 图标同一份设计 */
+.brand-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  flex: none;
+  display: block;
+}
+
 .brand-mark {
   font-size: 26px;
   line-height: 1;

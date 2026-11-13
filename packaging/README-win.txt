@@ -1,10 +1,10 @@
-CellTracker 4.0.0 · 细胞培养追踪（Windows 64 位）
+细胞档案 CellArchive 4.0.0 · 细胞培养管理追踪（Windows 64 位）
 ============================================================
 
 一、启动
-1. 把压缩包解压到有写权限的目录，例如 D:\CellTracker 或桌面。
+1. 把压缩包解压到有写权限的目录，例如 D:\CellArchive 或桌面。
    不要放在 C:\Program Files 下，否则程序无法创建 data 文件夹。
-2. 双击 CellTracker.exe。
+2. 双击 CellArchive.exe。
 3. 程序会自动打开浏览器；如果没有打开，请手动访问：
    http://127.0.0.1:18600/
 4. 黑色控制台窗口不要关闭，关闭就会停止服务。
@@ -31,7 +31,7 @@ CellTracker 4.0.0 · 细胞培养追踪（Windows 64 位）
 - 也可以关闭黑色控制台窗口，或按 Ctrl+C。
 
 六、更新软件
-- 下载新版本，解压后只替换 CellTracker.exe，保留 data 和 backups 文件夹。
+- 下载新版本，解压后只替换 CellArchive.exe，保留 data 和 backups 文件夹。
 - 更新前可以点网页左下角「备份数据库」，把 .db 下载到“下载”文件夹。
 
 六、常见问题

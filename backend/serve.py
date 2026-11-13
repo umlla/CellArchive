@@ -56,7 +56,7 @@ def port_available(host: str, port: int) -> bool:
 
 
 def existing_celltracker(port: int) -> bool:
-    """端口上是否已经跑着一个 CellTracker（重复双击时直接提示地址）。"""
+    """端口上是否已经跑着一个 细胞档案（重复双击时直接提示地址）。"""
     import json
     import urllib.request
 
@@ -70,7 +70,7 @@ def existing_celltracker(port: int) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     configure_console()
-    parser = argparse.ArgumentParser(description="启动 CellTracker v4")
+    parser = argparse.ArgumentParser(description="启动 细胞档案 CellArchive v4")
     parser.add_argument("--host", default=None, help="监听地址（默认读取 config.json，127.0.0.1）")
     parser.add_argument("--port", type=int, default=None, help="监听端口（默认 18600）")
     parser.add_argument("--no-browser", action="store_true", help="兼容旧参数（现在不会自动打开浏览器）")
@@ -98,9 +98,9 @@ def main(argv: list[str] | None = None) -> int:
             # 重复双击时不要自己退出：退出会连带关闭正在运行的那个控制台窗口，
             # 看起来就像「服务已停止」。这里停住，等用户按键再结束。
             print("=" * 62)
-            print(f" CellTracker 已经在运行：{local_url}")
+            print(f" 细胞档案 已经在运行：{local_url}")
             print(" 请直接用浏览器打开上面的地址。")
-            print(" 如果浏览器里打不开，请关闭所有 CellTracker 控制台窗口后重新双击 start.bat。")
+            print(" 如果浏览器里打不开，请关闭所有 细胞档案 控制台窗口后重新双击 start.bat。")
             print("=" * 62, flush=True)
             try:
                 input(" 按回车键关闭本窗口（不影响正在运行的服务）...")
@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
                 pass
             return 0
         print("=" * 62)
-        print(f" 端口 {config.port} 已被其他程序占用，CellTracker 无法启动。")
+        print(f" 端口 {config.port} 已被其他程序占用，细胞档案 无法启动。")
         print(' 请编辑 config.json，把 "port" 改成其他数字（例如 18601），再双击启动。')
         print(" 也可以先关闭占用该端口的程序（例如 maibot 等后台服务）。")
         print("=" * 62, flush=True)
@@ -117,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     app = create_app(config)
 
     print("=" * 62)
-    print(f" 🧬 CellTracker v{APP_VERSION}")
+    print(f" 细胞档案 CellArchive v{APP_VERSION}")
     print(f" 数据库：{config.db_path}")
     print(f" 本机访问：{local_url}  ← 复制到浏览器打开")
     if config.host in ("0.0.0.0", "::"):

@@ -2,8 +2,8 @@
   <div class="login-page">
     <div class="login-card">
       <span class="brand-mark">🧬</span>
-      <h1>CellTracker</h1>
-      <p class="sub">细胞培养追踪系统 · 请登录后使用</p>
+      <h1>细胞档案</h1>
+      <p class="sub">CellArchive · 细胞培养管理追踪 · 请登录后使用</p>
 
       <el-form @submit.prevent="submit">
         <el-form-item>
