@@ -121,6 +121,55 @@ export const compareApi = {
   curves: (params) => http.get('/compare/curves', { params }),
 }
 
+// 待办事项（用户自建，独立于实验）
+export const todoApi = {
+  list: (params) => http.get('/todos', { params }),
+  stats: () => http.get('/todos/stats'),
+  create: (payload) => http.post('/todos', payload),
+  update: (id, payload) => http.patch(`/todos/${id}`, payload),
+  complete: (id, done = true) => http.post(`/todos/${id}/complete`, { done }),
+  postpone: (id, days = 1) => http.post(`/todos/${id}/postpone`, { days }),
+  remove: (id) => http.delete(`/todos/${id}`),
+}
+
+// 课题讨论（课题 + 与导师的讨论记录）
+export const topicApi = {
+  list: (params) => http.get('/topics', { params }),
+  stats: () => http.get('/topics/stats'),
+  create: (payload) => http.post('/topics', payload),
+  get: (id) => http.get(`/topics/${id}`),
+  update: (id, payload) => http.patch(`/topics/${id}`, payload),
+  remove: (id) => http.delete(`/topics/${id}`),
+  discussions: (topicId, params) => http.get(`/topics/${topicId}/discussions`, { params }),
+  createDiscussion: (topicId, payload) => http.post(`/topics/${topicId}/discussions`, payload),
+  updateDiscussion: (id, payload) => http.patch(`/discussions/${id}`, payload),
+  removeDiscussion: (id) => http.delete(`/discussions/${id}`),
+}
+
+// 细胞实验（实验日程与检查提醒）
+export const experimentApi = {
+  list: (params) => http.get('/experiments', { params }),
+  summary: () => http.get('/experiments/summary'),
+  choices: () => http.get('/experiments/meta'),
+  detail: (id) => http.get(`/experiments/${id}`),
+  create: (payload) => http.post('/experiments', payload),
+  update: (id, payload) => http.patch(`/experiments/${id}`, payload),
+  remove: (id) => http.delete(`/experiments/${id}`),
+  complete: (id, payload) => http.post(`/experiments/${id}/complete`, payload),
+  finish: (id, payload) => http.post(`/experiments/${id}/finish`, payload),
+  week: (start) => http.get('/experiments/week', { params: start ? { start } : {} }),
+  month: (month) => http.get('/experiments/month', { params: month ? { month } : {} }),
+  addCheckpoint: (id, payload) => http.post(`/experiments/${id}/checkpoints`, payload),
+  updateCheckpoint: (id, checkpointId, payload) =>
+    http.patch(`/experiments/${id}/checkpoints/${checkpointId}`, payload),
+  reopenCheckpoint: (id, checkpointId) =>
+    http.post(`/experiments/${id}/checkpoints/${checkpointId}/reopen`),
+  postponeCheckpoint: (id, checkpointId, days = 1) =>
+    http.post(`/experiments/${id}/checkpoints/${checkpointId}/postpone`, { days }),
+  removeCheckpoint: (id, checkpointId) =>
+    http.delete(`/experiments/${id}/checkpoints/${checkpointId}`),
+}
+
 export function downloadUrl(url) {
   const anchor = document.createElement('a')
   anchor.href = url

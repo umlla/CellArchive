@@ -59,6 +59,95 @@
           </div>
         </div>
         <div class="topbar-right">
+          <el-popover
+            v-model:visible="bellOpen"
+            placement="bottom-end"
+            :width="380"
+            trigger="click"
+            popper-class="reminder-popover"
+            @show="onBellOpen"
+          >
+            <template #reference>
+              <button class="bell-button" :class="{ alert: attention > 0 }" :title="bellTitle">
+                <el-icon size="18"><Bell /></el-icon>
+                <span v-if="attention > 0" class="bell-badge">{{ attention > 99 ? '99+' : attention }}</span>
+              </button>
+            </template>
+
+            <div class="reminder-panel">
+              <div class="reminder-head">
+                <div>
+                  <strong>细胞实验提醒</strong>
+                  <span class="small faint"> · {{ reminders.summary?.now || '—' }}</span>
+                </div>
+                <el-button link type="primary" size="small" @click="goExperiments()">全部实验 →</el-button>
+              </div>
+
+              <div v-if="!hasReminderItems" class="reminder-empty">
+                <span class="icon">✅</span>
+                暂时没有到点的检查
+              </div>
+
+              <template v-else>
+                <div v-if="overdueItems.length" class="reminder-group">
+                  <div class="reminder-group-title danger">逾期（{{ overdueItems.length }}）</div>
+                  <button
+                    v-for="item in overdueItems"
+                    :key="`o-${item.experiment_id}`"
+                    class="reminder-item"
+                    @click="goExperiment(item.experiment_id, item.first_due?.id)"
+                  >
+                    <span class="ri-dot danger" />
+                    <span class="ri-main">
+                      <span class="ri-name">{{ item.experiment_name }}</span>
+                      <span class="ri-meta">{{ item.due_label }} · {{ item.gap_text }}</span>
+                    </span>
+                    <el-icon class="ri-arrow"><ArrowRight /></el-icon>
+                  </button>
+                </div>
+
+                <div v-if="todayItems.length" class="reminder-group">
+                  <div class="reminder-group-title warning">今天 / 24 小时内（{{ todayItems.length }}）</div>
+                  <button
+                    v-for="item in todayItems"
+                    :key="`t-${item.experiment_id}`"
+                    class="reminder-item"
+                    @click="goExperiment(item.experiment_id, item.first_due?.id)"
+                  >
+                    <span class="ri-dot warning" />
+                    <span class="ri-main">
+                      <span class="ri-name">{{ item.experiment_name }}</span>
+                      <span class="ri-meta">{{ item.due_label }} · {{ item.gap_text }}</span>
+                    </span>
+                    <el-icon class="ri-arrow"><ArrowRight /></el-icon>
+                  </button>
+                </div>
+
+                <div v-if="upcomingItems.length" class="reminder-group">
+                  <div class="reminder-group-title">即将到点（{{ upcomingItems.length }}）</div>
+                  <button
+                    v-for="item in upcomingItems.slice(0, 4)"
+                    :key="`u-${item.experiment_id}`"
+                    class="reminder-item"
+                    @click="goExperiment(item.experiment_id, item.first_due?.id)"
+                  >
+                    <span class="ri-dot" />
+                    <span class="ri-main">
+                      <span class="ri-name">{{ item.experiment_name }}</span>
+                      <span class="ri-meta">{{ item.due_label }} · {{ item.gap_text }}</span>
+                    </span>
+                    <el-icon class="ri-arrow"><ArrowRight /></el-icon>
+                  </button>
+                </div>
+              </template>
+
+              <div class="reminder-foot">
+                <el-button size="small" @click="refreshRemindersNow" :loading="reminders.loading">刷新</el-button>
+                <el-button size="small" type="primary" @click="goExperiments()">去处理</el-button>
+              </div>
+            </div>
+          </el-popover>
+
           <div class="quick-stats">
             <span class="quick-stat"><b>{{ store.meta?.counts?.cell_lines ?? '—' }}</b> 细胞株</span>
             <span class="quick-stat"><b>{{ store.meta?.counts?.culture_batches ?? '—' }}</b> 批次</span>
@@ -93,20 +182,31 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { http } from './api'
 import { logout, store } from './store'
+import {
+  attentionCount,
+  refreshReminders,
+  reminders,
+  startReminderPolling,
+  stopReminderPolling,
+} from './reminders'
 import { downloadUrl } from './utils'
 
 const route = useRoute()
 const router = useRouter()
 const mobileOpen = ref(false)
 const viewKey = ref(0)
+const bellOpen = ref(false)
 
 const menu = [
-  { path: '/', title: '在养细胞', icon: 'Odometer' },
+  { path: '/', title: '首页', icon: 'HomeFilled' },
+  { path: '/experiments', title: '细胞实验', icon: 'AlarmClock' },
+  { path: '/topics', title: '课题讨论', icon: 'ChatLineSquare' },
+  { path: '/cells', title: '在养细胞', icon: 'Odometer' },
   { path: '/records', title: '历史记录', icon: 'DataLine' },
   { path: '/compare', title: '生长曲线对比', icon: 'TrendCharts' },
   { path: '/batches/new', title: '新建批次', icon: 'MagicStick' },
@@ -115,6 +215,61 @@ const menu = [
   { path: '/groups', title: '细胞组', icon: 'Files' },
   { path: '/tools', title: '数据与工具', icon: 'Tools' },
 ]
+
+const attention = computed(() => attentionCount())
+const overdueItems = computed(() => reminders.summary?.overdue || [])
+const todayItems = computed(() => reminders.summary?.due_today || [])
+const upcomingItems = computed(() => reminders.summary?.upcoming || [])
+const hasReminderItems = computed(
+  () => overdueItems.value.length + todayItems.value.length + upcomingItems.value.length > 0,
+)
+const bellTitle = computed(() => {
+  const stats = reminders.summary?.stats
+  if (!stats) return '细胞实验提醒'
+  return `细胞实验：逾期 ${stats.overdue_checkpoints} 个 · 今天到点 ${stats.today_checkpoints} 个`
+})
+
+let stopPolling = null
+
+function goExperiment(id, checkpointId = null) {
+  bellOpen.value = false
+  const query = { exp: id }
+  if (checkpointId) query.check = checkpointId
+  router.push({ path: '/experiments', query })
+}
+
+function goExperiments() {
+  bellOpen.value = false
+  router.push('/experiments')
+}
+
+async function refreshRemindersNow() {
+  await refreshReminders({ silent: false })
+}
+
+async function onBellOpen() {
+  await refreshReminders()
+}
+
+onMounted(async () => {  // 顶栏提醒铃 / 首页卡片 / 实验页共用同一份汇总，按配置的间隔轮询
+  let intervalMinutes = 15
+  let browserNotify = false
+  try {
+    const meta = await http.get('/meta')
+    const settings = meta?.reminders || {}
+    if (settings.enabled === false) return
+    intervalMinutes = Number(settings.interval_minutes) || 15
+    browserNotify = settings.browser_notify !== false
+  } catch {
+    /* 元信息拿不到就用默认值继续轮询 */
+  }
+  stopPolling = startReminderPolling({ intervalMinutes, browserNotify })
+})
+
+onUnmounted(() => {
+  stopPolling?.()
+  stopReminderPolling()
+})
 
 const activePath = computed(() => {
   if (route.path.startsWith('/batches')) return '/batches/new'

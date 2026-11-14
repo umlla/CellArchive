@@ -130,19 +130,73 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(" 登录认证：未启用（单用户本地模式）")
     print(" 按 Ctrl+C 停止服务")
+    print("=" * 62)
+    print()
+    print(f" 请在浏览器中打开：{local_url}")
     print("=" * 62, flush=True)
 
-    try:
-        from waitress import serve
-    except ImportError:
-        app.run(host=config.host, port=config.port, threaded=True, debug=config.debug, use_reloader=False)
-    else:
+    return run_server(app, config)
+
+
+def run_server(app, config) -> int:
+    """按平台选择合适的 WSGI 服务器。
+
+    - Windows：waitress（生产可用、稳定）
+    - macOS / Linux：优先 gunicorn，没装则退回 Flask 自带服务器（threaded）
+    """
+    import os
+
+    if os.name == "nt":
+        try:
+            from waitress import serve
+        except ImportError:
+            app.run(host=config.host, port=config.port, threaded=True,
+                    debug=config.debug, use_reloader=False)
+            return 0
         try:
             serve(app, host=config.host, port=config.port, threads=8, channel_timeout=120)
         except OSError as exc:
             print(f"\n启动失败：{exc}")
             print(f"端口 {config.port} 可能已被其他程序占用，请修改 config.json 的 port 后重试。")
             return 1
+        return 0
+
+    # macOS / Linux
+    try:
+        from gunicorn.app.base import BaseApplication
+    except ImportError:
+        print(" 提示：未安装 gunicorn，使用内置服务器（单机使用足够）。")
+        app.run(host=config.host, port=config.port, threaded=True,
+                debug=config.debug, use_reloader=False)
+        return 0
+
+    class _App(BaseApplication):
+        def __init__(self, application, options=None):
+            self.options = options or {}
+            self.application = application
+            super().__init__()
+
+        def load_config(self):
+            for key, value in self.options.items():
+                if value is not None:
+                    self.cfg.set(key, value)
+
+        def load(self):
+            return self.application
+
+    try:
+        _App(app, {
+            "bind": f"{config.host}:{config.port}",
+            "workers": 1,
+            "threads": 8,
+            "timeout": 120,
+            "loglevel": "warning",
+            "accesslog": None,
+        }).run()
+    except OSError as exc:
+        print(f"\n启动失败：{exc}")
+        print(f"端口 {config.port} 可能已被其他程序占用，请修改 config.json 的 port 后重试。")
+        return 1
     return 0
 
 

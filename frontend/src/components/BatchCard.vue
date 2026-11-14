@@ -55,6 +55,23 @@
       暂无传代记录
     </div>
 
+    <!-- 关联的进行中细胞实验（点击跳到实验详情） -->
+    <div v-if="activeExperiments.length" class="bc-experiments">
+      <button
+        v-for="exp in activeExperiments"
+        :key="exp.experiment_id"
+        class="bc-exp-chip"
+        :class="`state-${exp.next_state || 'scheduled'}`"
+        :title="`${exp.name}${exp.next_due_label ? ` · 下次 ${exp.next_due_label}` : ''}`"
+        @click="openExperiment(exp.experiment_id)"
+      >
+        <el-icon><AlarmClock /></el-icon>
+        <span class="bc-exp-name">{{ exp.name }}</span>
+        <span v-if="exp.next_due_label" class="bc-exp-due">{{ exp.next_due_label }}</span>
+        <span v-else-if="exp.status === 'paused'" class="bc-exp-due">已暂停</span>
+      </button>
+    </div>
+
     <div class="bc-foot">
       <span v-if="!batch.is_active" class="small faint">
         <template v-if="current">最后传代 {{ current.date }} · </template>已终止，不再计算传代逾期
@@ -204,6 +221,7 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { batchApi, recordApi } from '../api'
 import { batchGrowthOption } from '../charts'
@@ -215,8 +233,16 @@ const props = defineProps({
 })
 const emit = defineEmits(['refresh', 'record'])
 
+const router = useRouter()
 const statusChoices = ['良好', '一般', '较差', '污染']
 const reasons = ['污染', '全部冻存', '丢弃', '实验结束', '其他']
+
+// 该细胞株关联的进行中细胞实验
+const activeExperiments = computed(() => props.batch.active_experiments || [])
+
+function openExperiment(experimentId) {
+  router.push({ path: '/experiments', query: { exp: experimentId } })
+}
 
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -362,5 +388,59 @@ async function terminateBatch() {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 240px;
+}
+
+/* 关联的进行中细胞实验 */
+.bc-experiments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0 2px;
+}
+
+.bc-exp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid #cfe4e2;
+  border-left-width: 3px;
+  background: var(--ct-primary-soft);
+  color: var(--ct-primary);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.bc-exp-chip:hover {
+  border-color: var(--ct-primary);
+}
+
+.bc-exp-chip.state-overdue {
+  background: #fff1f0;
+  border-color: #f3c9c9;
+  color: var(--ct-danger);
+}
+
+.bc-exp-chip.state-due {
+  background: #fffaf0;
+  border-color: #f0dfb8;
+  color: var(--ct-warning);
+}
+
+.bc-exp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.bc-exp-due {
+  font-size: 11px;
+  opacity: 0.85;
+  white-space: nowrap;
 }
 </style>

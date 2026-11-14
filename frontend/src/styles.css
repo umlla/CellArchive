@@ -384,6 +384,387 @@ a {
   display: none;
 }
 
+/* ---------------- 顶栏提醒铃 ---------------- */
+.bell-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--ct-border);
+  background: #fff;
+  color: var(--ct-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bell-button:hover {
+  border-color: var(--ct-accent);
+  color: var(--ct-primary);
+}
+
+.bell-button.alert {
+  color: var(--ct-danger);
+  border-color: #f3c9c9;
+  background: #fff7f6;
+  animation: bell-shake 2.4s ease-in-out infinite;
+}
+
+@keyframes bell-shake {
+  0%, 88%, 100% { transform: rotate(0); }
+  90% { transform: rotate(-9deg); }
+  93% { transform: rotate(8deg); }
+  96% { transform: rotate(-5deg); }
+}
+
+.bell-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--ct-danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.reminder-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reminder-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ct-border);
+}
+
+.reminder-empty {
+  padding: 22px 8px;
+  text-align: center;
+  color: var(--ct-faint);
+  font-size: 12.5px;
+}
+
+.reminder-empty .icon {
+  display: block;
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+
+.reminder-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reminder-group-title {
+  font-size: 11px;
+  color: var(--ct-faint);
+  padding: 2px 2px 4px;
+  letter-spacing: 0.02em;
+}
+
+.reminder-group-title.danger {
+  color: var(--ct-danger);
+}
+
+.reminder-group-title.warning {
+  color: var(--ct-warning);
+}
+
+.reminder-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.reminder-item:hover {
+  background: #f4f9f8;
+}
+
+.ri-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2563eb;
+  flex: none;
+}
+
+.ri-dot.danger {
+  background: var(--ct-danger);
+}
+
+.ri-dot.warning {
+  background: var(--ct-warning);
+}
+
+.ri-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.ri-name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ri-meta {
+  font-size: 11px;
+  color: var(--ct-faint);
+}
+
+.ri-arrow {
+  color: var(--ct-faint);
+  flex: none;
+}
+
+.reminder-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ct-border);
+}
+
+/* ---------------- 首页：培养实验提醒 ---------------- */
+.reminder-strip {
+  background: var(--ct-surface);
+  border: 1px solid var(--ct-border);
+  border-radius: var(--ct-radius);
+  box-shadow: var(--ct-shadow);
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+
+.reminder-strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--ct-border);
+  background: #fbfdfc;
+  flex-wrap: wrap;
+}
+
+.reminder-strip-head h2 {
+  margin: 0;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reminder-strip-head .sub {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--ct-faint);
+}
+
+.reminder-strip-body {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+}
+
+/* 4 列太挤时换成 2×2，避免「我的待办」被挤到第二行只剩半列 */
+@media (max-width: 1440px) {
+  .reminder-strip-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .reminder-col:nth-child(odd) {
+    border-left: 0;
+  }
+  .reminder-col:nth-child(n + 3) {
+    border-top: 1px solid var(--ct-border);
+  }
+  .reminder-col:nth-child(2) {
+    border-left: 1px solid var(--ct-border);
+  }
+  .reminder-col:nth-child(4) {
+    border-left: 1px solid var(--ct-border);
+  }
+}
+
+.reminder-col {
+  padding: 12px 16px;
+  min-width: 0;
+}
+
+.reminder-col + .reminder-col {
+  border-left: 1px solid var(--ct-border);
+}
+
+.reminder-col-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ct-muted);
+  margin-bottom: 8px;
+}
+
+.reminder-col-title .count {
+  margin-left: auto;
+  font-weight: 650;
+  font-size: 13px;
+  color: var(--ct-text);
+}
+
+.reminder-col-title.danger {
+  color: var(--ct-danger);
+}
+
+.reminder-col-title.danger .count {
+  color: var(--ct-danger);
+}
+
+.reminder-col-title.warning {
+  color: var(--ct-warning);
+}
+
+.reminder-col-title.warning .count {
+  color: var(--ct-warning);
+}
+
+/* 我的待办：专属紫色 */
+.reminder-col-title.todo {
+  color: #7c3aed;
+}
+
+.reminder-col-title.todo .count {
+  color: #7c3aed;
+}
+
+.ri-dot.todo {
+  background: #7c3aed;
+}
+
+.rt-time.todo {
+  color: #7c3aed;
+  font-weight: 600;
+}
+
+.reminder-task {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.reminder-task:hover {
+  background: #f7faf9;
+  border-color: var(--ct-border);
+}
+
+.reminder-task + .reminder-task {
+  margin-top: 2px;
+}
+
+.rt-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.rt-name {
+  font-size: 13px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rt-meta {
+  font-size: 11px;
+  color: var(--ct-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rt-time {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rt-time.danger {
+  color: var(--ct-danger);
+  font-weight: 600;
+}
+
+.rt-time.warning {
+  color: var(--ct-warning);
+  font-weight: 600;
+}
+
+.rt-time.info {
+  color: #2563eb;
+}
+
+.reminder-col-empty {
+  padding: 14px 6px;
+  font-size: 12px;
+  color: var(--ct-faint);
+  text-align: center;
+}
+
+.reminder-strip-foot {
+  padding: 8px 18px 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px dashed var(--ct-border);
+}
+
+@media (max-width: 900px) {
+  .reminder-strip-body {
+    grid-template-columns: 1fr;
+  }
+  .reminder-col + .reminder-col {
+    border-left: 0;
+    border-top: 1px solid var(--ct-border);
+  }
+}
+
 .main-area {
   padding: 22px 26px 40px !important;
   overflow-y: auto;
@@ -475,7 +856,8 @@ a {
 /* ---------------- 统计卡片 ---------------- */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* 列数随卡片数量自适应：4 张就均分 4 列，不会留空列 */
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
   margin-bottom: 18px;
 }
@@ -842,9 +1224,16 @@ a {
 }
 
 /* ---------------- 响应式 ---------------- */
+@media (max-width: 1320px) {
+  .stat-grid {
+    /* 窄屏时 4 张卡片排成 2×2，保持均匀 */
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
 @media (max-width: 1180px) {
   .stat-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   }
   .quick-stats {
     display: none;
@@ -899,3 +1288,78 @@ a {
     width: 100%;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Markdown 渲染样式（课题讨论记录）
+   轻量渲染器只产出标题/列表/引用/代码/段落，样式也只覆盖这些标签。
+--------------------------------------------------------------------------- */
+.markdown-body {
+  font-size: 14px;
+  line-height: 1.72;
+  color: var(--ct-text);
+  word-break: break-word;
+}
+.markdown-body > *:first-child { margin-top: 0; }
+.markdown-body > *:last-child { margin-bottom: 0; }
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 16px 0 8px;
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--ct-text);
+}
+.markdown-body h1 { font-size: 19px; }
+.markdown-body h2 { font-size: 17px; }
+.markdown-body h3 { font-size: 15px; }
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 { font-size: 14px; }
+.markdown-body p { margin: 8px 0; }
+.markdown-body ul,
+.markdown-body ol { margin: 8px 0; padding-left: 22px; }
+.markdown-body li { margin: 3px 0; }
+.markdown-body ul { list-style: disc; }
+.markdown-body ol { list-style: decimal; }
+.markdown-body blockquote {
+  margin: 10px 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--ct-primary);
+  background: var(--ct-primary-soft);
+  color: var(--ct-muted);
+  border-radius: 0 6px 6px 0;
+}
+.markdown-body code {
+  background: var(--ct-bg);
+  border: 1px solid var(--ct-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12.5px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+.markdown-body pre {
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: #f7faf9;
+  border: 1px solid var(--ct-border);
+  border-radius: 8px;
+  overflow: auto;
+}
+.markdown-body pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--ct-border);
+  margin: 14px 0;
+}
+.markdown-body a { color: var(--ct-primary); text-decoration: underline; }
+.markdown-body a:hover { color: var(--ct-accent); }
+.markdown-body strong { font-weight: 650; }

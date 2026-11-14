@@ -41,6 +41,13 @@ def serialize_batch(conn: sqlite3.Connection, batch: dict[str, Any]) -> dict[str
     batch["cumulative_pd"] = (
         batch["current_record"]["cumulative_pd"] if batch.get("current_record") else (batch.get("initial_pd") or 0.0)
     )
+    # 关联的进行中细胞实验（卡片上显示「该细胞有 1 个进行中的实验」）
+    from .experiments import experiments_for_cell_lines
+
+    line_id = batch.get("cell_line_id")
+    batch["active_experiments"] = (
+        experiments_for_cell_lines(conn, [int(line_id)]).get(int(line_id), []) if line_id else []
+    )
     return batch
 
 

@@ -20,10 +20,13 @@ from .services import (
     analytics,
     batches,
     excelio,
+    experiments,
     groups,
     lines,
     maintenance,
     records,
+    todos,
+    topics,
     vials,
 )
 
@@ -574,6 +577,240 @@ def compare_curves():
         start_date=request.args.get("start_date"),
         basis=request.args.get("basis", "date"),
     ))
+
+
+# --------------------------------------------------------------------------
+# 培养实验（细胞实验日程提醒）
+# --------------------------------------------------------------------------
+@api_bp.get("/experiments")
+def list_experiments():
+    scope = request.args.get("scope") or None
+    return jsonify(experiments.list_experiments(
+        get_db(),
+        status=request.args.get("status") or None,
+        q=request.args.get("q"),
+        scope=scope,
+        with_checkpoints=_int_arg("with_checkpoints", 0) or 0,
+    ))
+
+
+@api_bp.post("/experiments")
+@write
+def create_experiment():
+    return jsonify(experiments.create_experiment(get_db(), body(), user=user())), 201
+
+
+@api_bp.get("/experiments/summary")
+def experiment_summary():
+    """首页卡片与提醒铃用的汇总：逾期 / 今天到点 / 即将到点。"""
+    return jsonify(experiments.summary(get_db()))
+
+
+@api_bp.get("/experiments/meta")
+def experiment_meta():
+    """实验模块的下拉选项：细胞状况、间隔单位等。"""
+    return jsonify(experiments.choices())
+
+
+@api_bp.get("/experiments/week")
+def experiment_week():
+    """周视图：start 为任意一天（默认本周一），返回 7 天的检查安排。"""
+    return jsonify(experiments.week_view(get_db(), start=request.args.get("start")))
+
+
+@api_bp.get("/experiments/month")
+def experiment_month():
+    """月视图：month 为 YYYY-MM（默认当月），返回整月的检查点与传代待办。"""
+    return jsonify(experiments.month_view(get_db(), month=request.args.get("month")))
+
+
+@api_bp.get("/experiments/<int:experiment_id>")
+def get_experiment(experiment_id: int):
+    return jsonify(experiments.get_experiment(get_db(), experiment_id))
+
+
+@api_bp.patch("/experiments/<int:experiment_id>")
+@write
+def update_experiment(experiment_id: int):
+    return jsonify(experiments.update_experiment(get_db(), experiment_id, body(), user=user()))
+
+
+@api_bp.delete("/experiments/<int:experiment_id>")
+@write
+def delete_experiment(experiment_id: int):
+    return jsonify(experiments.delete_experiment(get_db(), experiment_id, user=user()))
+
+
+@api_bp.post("/experiments/<int:experiment_id>/checkpoints")
+@write
+def add_experiment_checkpoint(experiment_id: int):
+    return jsonify(experiments.add_checkpoint(get_db(), experiment_id, body(), user=user())), 201
+
+
+@api_bp.post("/experiments/<int:experiment_id>/complete")
+@write
+def complete_experiment_checkpoint(experiment_id: int):
+    """勾选某个检查点完成，并自动推进到下一个检查时间。"""
+    return jsonify(experiments.complete_checkpoint(get_db(), experiment_id, body(), user=user()))
+
+
+@api_bp.post("/experiments/<int:experiment_id>/finish")
+@write
+def finish_experiment(experiment_id: int):
+    """结束实验（已完成/已终止）：原因自填可空，剩余待检查时间点一并清除。"""
+    return jsonify(experiments.finish_experiment(get_db(), experiment_id, body(), user=user()))
+
+
+@api_bp.patch("/experiments/<int:experiment_id>/checkpoints/<int:checkpoint_id>")
+@write
+def update_experiment_checkpoint(experiment_id: int, checkpoint_id: int):
+    return jsonify(experiments.update_checkpoint(
+        get_db(), experiment_id, checkpoint_id, body(), user=user()
+    ))
+
+
+@api_bp.post("/experiments/<int:experiment_id>/checkpoints/<int:checkpoint_id>/reopen")
+@write
+def reopen_experiment_checkpoint(experiment_id: int, checkpoint_id: int):
+    return jsonify(experiments.reopen_checkpoint(get_db(), experiment_id, checkpoint_id, user=user()))
+
+
+@api_bp.post("/experiments/<int:experiment_id>/checkpoints/<int:checkpoint_id>/postpone")
+@write
+def postpone_experiment_checkpoint(experiment_id: int, checkpoint_id: int):
+    """把一个待检查时间点往后推（默认 1 天）。"""
+    return jsonify(experiments.postpone_checkpoint(
+        get_db(), experiment_id, checkpoint_id, body(), user=user()
+    ))
+
+
+@api_bp.delete("/experiments/<int:experiment_id>/checkpoints/<int:checkpoint_id>")
+@write
+def delete_experiment_checkpoint(experiment_id: int, checkpoint_id: int):
+    return jsonify(experiments.delete_checkpoint(get_db(), experiment_id, checkpoint_id, user=user()))
+
+
+# --------------------------------------------------------------------------
+# 课题讨论（课题 + 与导师的讨论记录）
+# --------------------------------------------------------------------------
+@api_bp.get("/topics")
+def list_topics():
+    """课题列表。status 可筛选 active/paused/closed，q 搜索名称/导师/简介。"""
+    return jsonify(topics.list_topics(
+        get_db(),
+        status=request.args.get("status") or None,
+        q=request.args.get("q") or None,
+    ))
+
+
+@api_bp.get("/topics/stats")
+def topic_stats():
+    return jsonify(topics.discussion_stats(get_db()))
+
+
+@api_bp.post("/topics")
+@write
+def create_topic():
+    return jsonify(topics.create_topic(get_db(), body(), user=user())), 201
+
+
+@api_bp.get("/topics/<int:topic_id>")
+def get_topic(topic_id: int):
+    return jsonify(topics.get_topic(get_db(), topic_id))
+
+
+@api_bp.patch("/topics/<int:topic_id>")
+@write
+def update_topic(topic_id: int):
+    return jsonify(topics.update_topic(get_db(), topic_id, body(), user=user()))
+
+
+@api_bp.delete("/topics/<int:topic_id>")
+@write
+def delete_topic(topic_id: int):
+    return jsonify(topics.delete_topic(get_db(), topic_id, user=user()))
+
+
+@api_bp.get("/topics/<int:topic_id>/discussions")
+def list_discussions(topic_id: int):
+    return jsonify(topics.list_discussions(
+        get_db(), topic_id, q=request.args.get("q") or None
+    ))
+
+
+@api_bp.post("/topics/<int:topic_id>/discussions")
+@write
+def create_discussion(topic_id: int):
+    return jsonify(topics.create_discussion(get_db(), topic_id, body(), user=user())), 201
+
+
+@api_bp.patch("/discussions/<int:discussion_id>")
+@write
+def update_discussion(discussion_id: int):
+    return jsonify(topics.update_discussion(get_db(), discussion_id, body(), user=user()))
+
+
+@api_bp.delete("/discussions/<int:discussion_id>")
+@write
+def delete_discussion(discussion_id: int):
+    return jsonify(topics.delete_discussion(get_db(), discussion_id, user=user()))
+
+
+# --------------------------------------------------------------------------
+# 待办事项（用户自建，独立于实验）
+# --------------------------------------------------------------------------
+@api_bp.get("/todos")
+def list_todos():
+    """待办列表。只传 start/end 时可查任意区间；only_done=1 只看已完成。"""
+    return jsonify(todos.list_todos(
+        get_db(),
+        start=request.args.get("start") or None,
+        end=request.args.get("end") or None,
+        include_done=_bool_arg("include_done", True),
+        only_done=_bool_arg("only_done", False),
+        q=request.args.get("q") or None,
+    ))
+
+
+@api_bp.post("/todos")
+@write
+def create_todo():
+    return jsonify(todos.create_todo(get_db(), body(), user=user())), 201
+
+
+@api_bp.get("/todos/stats")
+def todo_stats():
+    return jsonify(todos.todo_stats(get_db()))
+
+
+@api_bp.get("/todos/<int:todo_id>")
+def get_todo(todo_id: int):
+    return jsonify(todos.get_todo(get_db(), todo_id))
+
+
+@api_bp.patch("/todos/<int:todo_id>")
+@write
+def update_todo(todo_id: int):
+    return jsonify(todos.update_todo(get_db(), todo_id, body(), user=user()))
+
+
+@api_bp.post("/todos/<int:todo_id>/complete")
+@write
+def complete_todo(todo_id: int):
+    """勾选 / 撤销勾选（body 里 done=false 表示撤销）。"""
+    return jsonify(todos.complete_todo(get_db(), todo_id, body(), user=user()))
+
+
+@api_bp.post("/todos/<int:todo_id>/postpone")
+@write
+def postpone_todo(todo_id: int):
+    return jsonify(todos.postpone_todo(get_db(), todo_id, body(), user=user()))
+
+
+@api_bp.delete("/todos/<int:todo_id>")
+@write
+def delete_todo(todo_id: int):
+    return jsonify(todos.delete_todo(get_db(), todo_id, user=user()))
 
 
 # --------------------------------------------------------------------------

@@ -1,3 +1,9 @@
+# 通用依赖（Windows / macOS / Linux 都会安装）
 Flask>=3.0,<4
 openpyxl>=3.1,<4
-waitress>=3.0,<4
+
+# 平台专用依赖：pip 会按当前系统自动选择，不匹配的项会被跳过
+# - Windows：waitress（生产级 WSGI 服务器）
+# - macOS / Linux：gunicorn
+waitress>=3.0,<4; sys_platform == "win32"
+gunicorn>=21,<24; sys_platform != "win32"

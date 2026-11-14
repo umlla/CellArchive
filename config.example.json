@@ -2,7 +2,7 @@
   "host": "127.0.0.1",
   "port": 18600,
   "debug": false,
-  "open_browser": true,
+  "open_browser": false,
   "database": "data/cell_data.db",
   "backup_dir": "backups",
   "frontend_dist": "frontend/dist",
@@ -11,5 +11,11 @@
     "session_days": 30,
     "bootstrap_username": "admin",
     "bootstrap_password": "celltracker"
+  },
+  "reminders": {
+    "enabled": true,
+    "browser_notify": true,
+    "interval_minutes": 15,
+    "sound": false
   }
 }

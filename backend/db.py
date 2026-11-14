@@ -132,6 +132,107 @@ SCHEMA_STATEMENTS = (
         detail TEXT
     )
     """,
+    # ---------- 培养实验模块（内测版新增，Go 正式版不读取） ----------
+    """
+    CREATE TABLE IF NOT EXISTS culture_experiments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        notes TEXT,
+        started_at TEXT,
+        cell_line_id INTEGER,
+        interval_unit TEXT DEFAULT 'h',
+        interval_value INTEGER DEFAULT 24,
+        default_cell_status TEXT,
+        extra_notes TEXT,
+        status TEXT DEFAULT 'active',
+        ended_at TEXT,
+        end_reason TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY(cell_line_id) REFERENCES cell_lines(id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS experiment_checkpoints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        experiment_id INTEGER NOT NULL,
+        seq INTEGER NOT NULL,
+        due_at TEXT NOT NULL,
+        due_date TEXT NOT NULL,
+        due_clock TEXT NOT NULL,
+        kind TEXT,
+        done INTEGER DEFAULT 0,
+        done_at TEXT,
+        cell_status TEXT,
+        observation TEXT,
+        notes TEXT,
+        -- 该检查点之后使用的循环间隔（自定义间隔时写入），为空则沿用实验默认间隔
+        interval_value INTEGER,
+        interval_unit TEXT,
+        FOREIGN KEY(experiment_id) REFERENCES culture_experiments(id)
+    )
+    """,
+    # 实验关联的细胞株（多对多，可由细胞组批量带入，之后可自由增减）
+    """
+    CREATE TABLE IF NOT EXISTS experiment_lines (
+        experiment_id INTEGER NOT NULL,
+        cell_line_id INTEGER NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        PRIMARY KEY (experiment_id, cell_line_id),
+        FOREIGN KEY(experiment_id) REFERENCES culture_experiments(id),
+        FOREIGN KEY(cell_line_id) REFERENCES cell_lines(id)
+    )
+    """,
+    # 实验关联的细胞组（仅作归类标记，成员以 experiment_lines 为准）
+    """
+    CREATE TABLE IF NOT EXISTS experiment_groups (
+        experiment_id INTEGER NOT NULL,
+        group_id INTEGER NOT NULL,
+        PRIMARY KEY (experiment_id, group_id),
+        FOREIGN KEY(experiment_id) REFERENCES culture_experiments(id),
+        FOREIGN KEY(group_id) REFERENCES cell_groups(id)
+    )
+    """,
+    # 用户自己添加的待办事项（独立于实验，可带时间也可只有日期）
+    """
+    CREATE TABLE IF NOT EXISTS todo_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        notes TEXT,
+        due_date TEXT NOT NULL,
+        due_clock TEXT,
+        done INTEGER DEFAULT 0,
+        done_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """,
+    # 课题：与导师讨论的组织单位
+    """
+    CREATE TABLE IF NOT EXISTS research_topics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        advisor TEXT,
+        status TEXT DEFAULT 'active',
+        summary TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """,
+    # 课题讨论记录（内容为 Markdown）
+    """
+    CREATE TABLE IF NOT EXISTS topic_discussions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        topic_id INTEGER NOT NULL,
+        discussed_on TEXT NOT NULL,
+        title TEXT,
+        content TEXT,
+        participants TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY(topic_id) REFERENCES research_topics(id)
+    )
+    """,
 )
 
 INDEX_STATEMENTS = (
@@ -141,6 +242,11 @@ INDEX_STATEMENTS = (
     "CREATE INDEX IF NOT EXISTS idx_vials_line ON frozen_vials(cell_line_id)",
     "CREATE INDEX IF NOT EXISTS idx_vials_location ON frozen_vials(location)",
     "CREATE INDEX IF NOT EXISTS idx_group_members_group ON cell_group_members(group_id, sort_order)",
+    "CREATE INDEX IF NOT EXISTS idx_exp_check_due ON experiment_checkpoints(done, due_at)",
+    "CREATE INDEX IF NOT EXISTS idx_exp_check_exp ON experiment_checkpoints(experiment_id, seq)",
+    "CREATE INDEX IF NOT EXISTS idx_exp_lines_line ON experiment_lines(cell_line_id)",
+    "CREATE INDEX IF NOT EXISTS idx_todo_due ON todo_items(done, due_date)",
+    "CREATE INDEX IF NOT EXISTS idx_discussion_topic ON topic_discussions(topic_id, discussed_on)",
 )
 
 
@@ -185,6 +291,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
     line_columns = {row["name"] for row in conn.execute("PRAGMA table_info(cell_lines)")}
     if "species" not in line_columns:
         conn.execute("ALTER TABLE cell_lines ADD COLUMN species TEXT")
+    # 兼容更早的内测库：培养实验检查点缺少自定义间隔列
+    check_columns = {row["name"] for row in conn.execute("PRAGMA table_info(experiment_checkpoints)")}
+    for column in ("interval_value", "interval_unit", "observation"):
+        if column not in check_columns:
+            conn.execute(f"ALTER TABLE experiment_checkpoints ADD COLUMN {column} "
+                         + ("INTEGER" if column == "interval_value" else "TEXT"))
+    # 兼容更早的内测库：实验缺少「其他信息」备注列
+    exp_columns = {row["name"] for row in conn.execute("PRAGMA table_info(culture_experiments)")}
+    if "extra_notes" not in exp_columns:
+        conn.execute("ALTER TABLE culture_experiments ADD COLUMN extra_notes TEXT")
     for statement in INDEX_STATEMENTS:
         conn.execute(statement)
     set_meta(conn, "schema_version", str(SCHEMA_VERSION))

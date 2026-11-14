@@ -3,7 +3,7 @@
     <div class="login-card">
       <span class="brand-mark">🧬</span>
       <h1>细胞档案</h1>
-      <p class="sub">CellArchive · 细胞培养管理追踪 · 请登录后使用</p>
+      <p class="sub">CellArchive · 细胞培养与实验管理 · 请登录后使用</p>
 
       <el-form @submit.prevent="submit">
         <el-form-item>

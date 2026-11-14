@@ -75,6 +75,10 @@ def get_line_summary(conn: sqlite3.Connection, line_id: int) -> dict[str, Any]:
     row = fetch_one(conn, LINE_SUMMARY_SQL + " WHERE cl.id = ?", (line_id,))
     if row is None:
         raise NotFound(f"细胞株不存在（id={line_id}）")
+    # 该细胞株关联的进行中细胞实验
+    from .experiments import experiments_for_cell_lines
+
+    row["active_experiments"] = experiments_for_cell_lines(conn, [line_id]).get(int(line_id), [])
     return row
 
 
@@ -149,12 +153,12 @@ def line_batches(conn: sqlite3.Connection, line_id: int, include_ended: bool = T
     sql += " ORDER BY cb.is_active DESC, COALESCE(cb.revival_date, '') DESC, cb.id DESC"
 
     batches = fetch_all(conn, sql, params)
+    from .batches import serialize_batch
+
     for batch in batches:
-        record_id = batch["active_record_id"] or batch["latest_record_id"]
-        batch["current_record"] = None
-        if record_id:
-            batch["current_record"] = fetch_one(conn, "SELECT * FROM culture_records WHERE id = ?", (record_id,))
-        batch["is_active"] = int(batch["is_active"] or 0)
+        # 复用批次序列化，保证带出当前记录、累计 PD 与关联的进行中实验
+        batch["cell_line_id"] = line_id
+        serialize_batch(conn, batch)
     return batches
 
 

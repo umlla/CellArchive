@@ -23,7 +23,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "host": "0.0.0.0",
     "port": 18600,
     "debug": False,
-    "open_browser": True,
+    "open_browser": False,
     "database": "data/cell_data.db",
     "backup_dir": "backups",
     "frontend_dist": "frontend/dist",
@@ -33,6 +33,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # 首次开启认证时自动创建的账号（请登录后立即改密码）
         "bootstrap_username": "admin",
         "bootstrap_password": "celltracker",
+    },
+    # 培养实验提醒（内测版）：页内提醒铃 + 每 N 分钟弹一次浏览器通知
+    "reminders": {
+        "enabled": True,
+        "browser_notify": True,
+        "interval_minutes": 15,
+        "sound": False,
     },
 }
 
@@ -59,7 +66,7 @@ class Config:
     host: str = "0.0.0.0"
     port: int = 18600
     debug: bool = False
-    open_browser: bool = True
+    open_browser: bool = False
     db_path: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "cell_data.db")
     backup_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "backups")
     frontend_dist: Path = field(default_factory=lambda: PROJECT_ROOT / "frontend" / "dist")
@@ -67,6 +74,10 @@ class Config:
     session_days: int = 30
     bootstrap_username: str = "admin"
     bootstrap_password: str = "celltracker"
+    reminders_enabled: bool = True
+    reminders_browser_notify: bool = True
+    reminders_interval_minutes: int = 15
+    reminders_sound: bool = False
     config_path: Path = field(default_factory=lambda: PROJECT_ROOT / "config.json")
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -84,11 +95,12 @@ class Config:
                 print(f"[config] 警告：无法读取 {path}：{exc}，使用默认配置")
 
         auth = merged.get("auth") or {}
+        reminders = merged.get("reminders") or {}
         cfg = cls(
             host=str(os.environ.get("CELLTRACKER_HOST", merged.get("host", "0.0.0.0"))),
             port=int(os.environ.get("CELLTRACKER_PORT", merged.get("port", 18600))),
             debug=bool(merged.get("debug", False)),
-            open_browser=bool(merged.get("open_browser", True)),
+            open_browser=bool(merged.get("open_browser", False)),
             db_path=_resolve(os.environ.get("CELLTRACKER_DB", merged.get("database", "data/cell_data.db"))),
             backup_dir=_resolve(os.environ.get("CELLTRACKER_BACKUP_DIR", merged.get("backup_dir", "backups"))),
             frontend_dist=_resolve(merged.get("frontend_dist", "frontend/dist")),
@@ -96,6 +108,10 @@ class Config:
             session_days=int(auth.get("session_days", 30)),
             bootstrap_username=str(auth.get("bootstrap_username", "admin")),
             bootstrap_password=str(auth.get("bootstrap_password", "celltracker")),
+            reminders_enabled=bool(reminders.get("enabled", True)),
+            reminders_browser_notify=bool(reminders.get("browser_notify", True)),
+            reminders_interval_minutes=max(1, int(reminders.get("interval_minutes", 15) or 15)),
+            reminders_sound=bool(reminders.get("sound", False)),
             config_path=path.resolve(),
             raw=merged,
         )
@@ -119,6 +135,12 @@ class Config:
             "auth": {
                 "enabled": self.auth_enabled,
                 "session_days": self.session_days,
+            },
+            "reminders": {
+                "enabled": self.reminders_enabled,
+                "browser_notify": self.reminders_browser_notify,
+                "interval_minutes": self.reminders_interval_minutes,
+                "sound": self.reminders_sound,
             },
             "frontend_built": (self.frontend_dist / "index.html").exists(),
         }

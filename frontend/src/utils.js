@@ -83,3 +83,72 @@ export function downloadUrl(url) {
 export function boxLabel(box) {
   return box ? box : '未命名冻存盒'
 }
+
+// ---------------- 细胞实验日程 ----------------
+// 时间统一用 'YYYY-MM-DD HH:MM' 字符串在前后端之间传递，
+// 这里把 Date 对象转成后端认识的本地时间写法（不走 toISOString，避免时区偏移）
+export function toLocalMinute(value) {
+  if (!value) return null
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const pad = (number) => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`
+}
+
+export function fromLocalMinute(text) {
+  if (!text) return null
+  const normalized = String(text).replace(' ', 'T')
+  const date = new Date(normalized)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+/** 默认首次检查时间：下一个整点（若已过 20 点则顺延到次日 9 点） */
+export function defaultFirstDue() {
+  const now = new Date()
+  const next = new Date(now)
+  next.setSeconds(0, 0)
+  next.setMinutes(0)
+  next.setHours(now.getHours() + 1)
+  // 夜间（20:00 之后）默认排到第二天早上 9 点
+  if (now.getHours() >= 20) {
+    next.setDate(next.getDate() + 1)
+    next.setHours(9, 0, 0, 0)
+  }
+  return next
+}
+
+export function checkStateMeta(state) {
+  return (
+    {
+      overdue: { label: '已逾期', type: 'danger', className: 'overdue' },
+      due: { label: '待检查', type: 'warning', className: 'due' },
+      upcoming: { label: '即将到点', type: 'primary', className: 'upcoming' },
+      scheduled: { label: '计划中', type: 'info', className: 'scheduled' },
+      done: { label: '已完成', type: 'success', className: 'done' },
+    }[state] || { label: '—', type: 'info', className: 'scheduled' }
+  )
+}
+
+export function experimentStatusMeta(status) {
+  return (
+    {
+      active: { label: '进行中', type: 'success' },
+      paused: { label: '已暂停', type: 'warning' },
+      done: { label: '已完成', type: 'info' },
+      aborted: { label: '已终止', type: 'danger' },
+    }[status] || { label: status || '—', type: 'info' }
+  )
+}
+
+/** 间隔文案（前端兜底：24h → 1d（每 1 天）） */
+export function intervalText(value, unit) {
+  if (!value) return '未设置'
+  const number = Number(value)
+  const text = Number.isInteger(number) ? String(number) : String(Number(number.toFixed(2)))
+  if (unit === 'd') return `${text}d（每 ${text} 天）`
+  if (unit === 'm') return `${text}m（每 ${text} 分钟）`
+  if (number % 24 === 0 && number >= 24) return `${text}h（${number / 24}d · 每 ${text} 小时）`
+  return `${text}h（每 ${text} 小时）`
+}

@@ -1,5 +1,6 @@
 <template>
   <div v-loading="loading">
+    <!-- ==================== 培养概览（从首页挪过来） ==================== -->
     <div class="stat-grid">
       <StatTile
         label="在养细胞株"
@@ -8,18 +9,18 @@
         hint="有活跃批次的细胞株"
       />
       <StatTile
-        label="在养批次"
-        :value="dashboard?.stats?.active_batches ?? '—'"
-        icon="Histogram"
-        hint="复苏中的培养批次 · 点击查看"
-        tint="rgba(37, 99, 235, 0.08)"
+        label="待处理实验"
+        :value="experimentStats.active_experiments ?? '—'"
+        icon="AlarmClock"
+        :hint="experimentHint"
+        tint="rgba(15, 118, 110, 0.08)"
         class="clickable-tile"
-        @click="openBatchDialog"
+        @click="goExperiments"
       />
       <StatTile
         label="需要传代"
         :value="dashboard?.due_soon?.length ?? '—'"
-        icon="AlarmClock"
+        icon="Timer"
         hint="3 天内或已逾期 · 点击查看"
         tint="rgba(196, 127, 23, 0.1)"
         class="clickable-tile"
@@ -30,7 +31,7 @@
         :value="dashboard?.stats?.unplaced_vials ?? '—'"
         icon="Box"
         hint="在库但未填位置的冻存管 · 点击查看"
-        tint="rgba(190, 18, 60, 0.08)"
+        tint="rgba(124, 58, 237, 0.08)"
         class="clickable-tile"
         @click="openVialDialogList"
       />
@@ -93,6 +94,19 @@
                   共 {{ lineDetail.cell_line.batch_count }} 个批次
                   <template v-if="lineDetail.cell_line.notes"> · {{ lineDetail.cell_line.notes }}</template>
                 </p>
+                <div v-if="lineExperiments.length" class="line-experiments">
+                  <button
+                    v-for="exp in lineExperiments"
+                    :key="exp.experiment_id"
+                    class="line-exp-chip"
+                    :class="`state-${exp.next_state || 'scheduled'}`"
+                    @click="openExperiment(exp.experiment_id)"
+                  >
+                    <el-icon><AlarmClock /></el-icon>
+                    <span>{{ exp.name }}</span>
+                    <em v-if="exp.next_due_label">下次 {{ exp.next_due_label }}</em>
+                  </button>
+                </div>
               </div>
               <div class="row">
                 <el-button
@@ -381,46 +395,6 @@
       </template>
     </el-dialog>
 
-    <!-- 在养批次明细 -->
-    <el-dialog v-model="batchDialogVisible" title="在养批次" width="min(900px, 94vw)" top="8vh">
-      <div v-if="activeBatchRows.length">
-        <div class="small muted" style="margin-bottom: 10px">
-          共 {{ activeBatchRows.length }} 个批次正在培养，点击「查看」跳转到对应细胞株。
-        </div>
-        <el-table :data="activeBatchRows" size="small" max-height="480">
-          <el-table-column prop="cell_line" label="细胞株" min-width="170" fixed />
-          <el-table-column prop="batch_name" label="批次" min-width="200" show-overflow-tooltip />
-          <el-table-column label="代次" width="64" align="center">
-            <template #default="{ row }">P{{ row.passage ?? '—' }}</template>
-          </el-table-column>
-          <el-table-column prop="last_passage" label="上次传代" width="104" />
-          <el-table-column label="累计PD" width="86" align="right">
-            <template #default="{ row }">{{ fmtNum(row.cumulative_pd) }}</template>
-          </el-table-column>
-          <el-table-column prop="next_passage_date" label="下次传代" width="104" />
-          <el-table-column label="剩余" width="104">
-            <template #default="{ row }">
-              <span :class="['remaining-dot', remainingMeta(row.remaining_days).type]">
-                {{ remainingMeta(row.remaining_days).text }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="132" align="center">
-            <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="jumpToLine(row)">查看</el-button>
-              <el-button link type="primary" size="small" @click="openRecordEntry(row.cell_line_id, row.batch_id)">录入</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-      <div v-else class="empty-hint">
-        <span class="icon">🧪</span>当前没有在养批次
-      </div>
-      <template #footer>
-        <el-button @click="batchDialogVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
     <!-- 待录入位置的冻存管 -->
     <el-dialog v-model="vialListVisible" title="待录入位置的冻存管" width="min(920px, 94vw)" top="8vh">
       <div v-if="vialListRows.length">
@@ -656,7 +630,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { batchApi, groupApi, lineApi, metaApi, vialApi } from '../api'
 import { groupCurvesOption, lineColor, ratesOption } from '../charts'
 import { loadMeta } from '../store'
-import { daysFromToday, downloadUrl, fmtNum, remainingMeta, statusTagType, todayISO } from '../utils'
+import { reminders, refreshReminders } from '../reminders'
+import { downloadUrl, fmtNum, remainingMeta, statusTagType, todayISO } from '../utils'
 import Chart from '../components/Chart.vue'
 import StatTile from '../components/StatTile.vue'
 import BatchCard from '../components/BatchCard.vue'
@@ -698,11 +673,24 @@ const vialPdRecordId = ref(null)
 const vialPdMode = ref('cumulative')
 const dueDialogVisible = ref(false)
 
-const batchDialogVisible = ref(false)
-const activeBatchRows = ref([])
+// 「待处理实验」卡片：数据来自全站共享的提醒汇总
+const experimentStats = computed(() => reminders.summary?.stats || {})
+const experimentHint = computed(() => {
+  const stats = experimentStats.value
+  const overdue = stats.overdue_checkpoints || 0
+  const today = stats.today_checkpoints || 0
+  if (overdue && today) return `逾期 ${overdue} 个 · 今天 ${today} 个 · 点击查看`
+  if (overdue) return `逾期 ${overdue} 个检查点 · 点击查看`
+  if (today) return `今天 ${today} 个检查点 · 点击查看`
+  return '进行中的细胞实验 · 点击查看'
+})
+
+function goExperiments() {
+  router.push('/experiments')
+}
+
 const vialListVisible = ref(false)
 const vialListRows = ref([])
-
 const recordEntryVisible = ref(false)
 const recordEntryLineId = ref(null)
 const recordEntryBatchId = ref(null)
@@ -722,6 +710,13 @@ const groupBatchForm = ref({
 })
 
 const reasons = ['污染', '全部冻存', '丢弃', '实验结束', '其他']
+
+// 当前细胞株关联的进行中细胞实验
+const lineExperiments = computed(() => lineDetail.value?.cell_line?.active_experiments || [])
+
+function openExperiment(experimentId) {
+  router.push({ path: '/experiments', query: { exp: experimentId } })
+}
 
 const filteredLines = computed(() => {
   const keyword = search.value.trim().toLowerCase()
@@ -835,7 +830,6 @@ async function loadBase() {
   dashboard.value = dash
   lines.value = lineList
   groups.value = groupList
-  activeBatchRows.value = []
   vialListRows.value = []
 }
 
@@ -1024,36 +1018,12 @@ function applyPdRecord() {
 
 function jumpToLine(row) {
   dueDialogVisible.value = false
-  batchDialogVisible.value = false
   router.push({ path: '/', query: { mode: 'line', line: row.cell_line_id } })
 }
 
 function jumpToVialLine(row) {
   vialListVisible.value = false
   router.push({ path: '/', query: { mode: 'line', line: row.cell_line_id } })
-}
-
-async function openBatchDialog() {
-  batchDialogVisible.value = true
-  if (activeBatchRows.value.length) return
-  try {
-    const rows = await batchApi.list({ is_active: true })
-    activeBatchRows.value = rows
-      .map((batch) => ({
-        batch_id: batch.id,
-        batch_name: batch.batch_name,
-        cell_line: batch.cell_name,
-        cell_line_id: batch.cell_line_id,
-        passage: batch.current_record?.passage ?? null,
-        last_passage: batch.current_record?.date ?? '—',
-        cumulative_pd: batch.cumulative_pd,
-        next_passage_date: batch.current_record?.next_passage_date ?? '',
-        remaining_days: daysFromToday(batch.current_record?.next_passage_date),
-      }))
-      .sort((a, b) => (a.remaining_days ?? 9999) - (b.remaining_days ?? 9999))
-  } catch {
-    activeBatchRows.value = []
-  }
 }
 
 async function openVialDialogList() {
@@ -1157,8 +1127,12 @@ function exportGroup() {
 }
 
 onMounted(async () => {
+  // 「待处理实验」卡片读的是全站共享的提醒汇总，进入页面时刷新一次
+  refreshReminders({ silent: true })
   try {
     await loadBase()
+    // 从首页「需要传代」卡片跳过来时直接打开弹窗
+    if (route.query.due === '1') dueDialogVisible.value = true
     if (route.query.mode === 'group') mode.value = 'group'
     const groupFromQuery = Number(route.query.group)
     if (groupFromQuery && groups.value.some((group) => group.id === groupFromQuery)) {
@@ -1347,6 +1321,51 @@ function storeReady() {
   gap: 16px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--ct-border);
+}
+
+/* 该细胞株关联的进行中实验 */
+.line-experiments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.line-exp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid #cfe4e2;
+  border-left-width: 3px;
+  background: var(--ct-primary-soft);
+  color: var(--ct-primary);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.line-exp-chip:hover {
+  border-color: var(--ct-primary);
+}
+
+.line-exp-chip.state-overdue {
+  background: #fff1f0;
+  border-color: #f3c9c9;
+  color: var(--ct-danger);
+}
+
+.line-exp-chip.state-due {
+  background: #fffaf0;
+  border-color: #f0dfb8;
+  color: var(--ct-warning);
+}
+
+.line-exp-chip em {
+  font-style: normal;
+  opacity: 0.85;
+  font-size: 11px;
 }
 
 .charts-grid {
