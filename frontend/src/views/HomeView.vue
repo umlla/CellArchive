@@ -106,26 +106,59 @@
           </div>
         </div>
 
-        <div class="reminder-col">
-          <div class="reminder-col-title todo">
-            <el-icon><EditPen /></el-icon>我的待办
+        <div
+          class="reminder-col reminder-col-todo"
+          :class="{ adding: addingTodo }"
+          title="点空白处新建今日待办"
+          @click.self="startQuickTodo"
+        >
+          <div class="reminder-col-title todo" @click.self="startQuickTodo">
+            <el-icon><EditPen /></el-icon>{{ todoTitle }}
             <span class="count">{{ todoCount }}</span>
           </div>
-          <button
-            v-for="todo in todoPreview.slice(0, 4)"
-            :key="`todo-${todo.id}`"
-            class="reminder-task"
-            :title="todo.notes || todo.title"
-            @click="scrollToSchedule"
-          >
-            <span class="ri-dot todo" />
-            <span class="rt-main">
-              <span class="rt-name">{{ todo.title }}</span>
-              <span class="rt-meta">{{ todo.due_label }}{{ todo.gap_text ? ` · ${todo.gap_text}` : '' }}</span>
-            </span>
-            <span class="rt-time todo">{{ todo.state === 'overdue' ? '逾期' : '今天' }}</span>
-          </button>
-          <div v-if="!todoPreview.length" class="reminder-col-empty">没有待处理的待办</div>
+          <div class="todo-list-scroll">
+            <button
+              v-for="todo in todoPreview"
+              :key="`todo-${todo.id}`"
+              class="reminder-task"
+              :title="todo.notes || todo.title"
+              @click="scrollToSchedule"
+            >
+              <span class="ri-dot todo" :class="{ overdue: todo.state === 'overdue' }" />
+              <span class="rt-main">
+                <span class="rt-name">{{ todo.title }}</span>
+                <span class="rt-meta">{{ todoMeta(todo) }}</span>
+              </span>
+              <!-- 逾期才标出来；今天的待办不再重复显示「今天」 -->
+              <span v-if="todo.state === 'overdue'" class="rt-time todo">逾期</span>
+            </button>
+
+            <div
+              v-if="!todoPreview.length && !addingTodo"
+              class="reminder-col-empty reminder-col-empty-clickable"
+              @click="startQuickTodo"
+            >
+              今天没有待办 · 点这里添加
+            </div>
+          </div>
+
+          <!-- 点空白处直接新建今日待办：回车保存，Esc 取消 -->
+          <div v-if="addingTodo" class="todo-quickadd" @click.stop>
+            <input
+              ref="todoQuickInput"
+              v-model="todoQuickText"
+              class="todo-quick-input"
+              placeholder="新建今日待办，回车保存"
+              maxlength="200"
+              @keydown.enter.prevent="saveQuickTodo"
+              @keydown.esc.prevent="cancelQuickTodo"
+              @blur="onQuickTodoBlur"
+            />
+          </div>
+
+          <div v-else class="reminder-col-add" @click="startQuickTodo">
+            ＋ 新建今日待办
+          </div>
         </div>
       </div>
     </section>
@@ -147,7 +180,6 @@
       <ScheduleBoard
         ref="scheduleRef"
         v-model="scheduleMode"
-        :max-checks="3"
         @open-check="onCheckOpen"
         @open-passage="onPassageOpen"
         @more="onMonthMore"
@@ -158,10 +190,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { todoApi } from '../api'
 import { refreshReminders, reminders } from '../reminders'
+import { todayISO } from '../utils'
 import GreetingBar from '../components/GreetingBar.vue'
 import ScheduleBoard from '../components/ScheduleBoard.vue'
 
@@ -173,6 +207,17 @@ const todoCount = computed(() => {
   const stats = reminders.summary?.stats || {}
   return (stats.todo_overdue || 0) + (stats.todo_today || 0)
 })
+// 这一栏本来就只列「今天」和「逾期」，所以标题直接说明范围，不再逐条标「今天」
+const todoOverdueCount = computed(() => reminders.summary?.stats?.todo_overdue || 0)
+const todoTitle = computed(() => (todoOverdueCount.value > 0 ? '今日待办与逾期' : '今日待办'))
+
+/** 待办副标题：今天的不写日期，逾期的写明是哪天，并保留剩余时间 */
+function todoMeta(todo) {
+  const parts = []
+  if (todo.state === 'overdue') parts.push(todo.due_label || '已逾期')
+  if (todo.gap_text) parts.push(todo.gap_text)
+  return parts.join(' · ')
+}
 // 月视图 / 周视图，记在本地，下次打开保持上次的选择
 const scheduleMode = ref(localStorage.getItem('ct.scheduleMode') === 'week' ? 'week' : 'month')
 watch(scheduleMode, (value) => {
@@ -220,6 +265,53 @@ function openAddTodo() {
 
 function scrollToSchedule() {
   document.querySelector('.home-section:last-of-type')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+// ---------------- 「今日待办」点空白处直接新建 ----------------
+const addingTodo = ref(false)
+const todoQuickText = ref('')
+const todoQuickInput = ref(null)
+const savingQuickTodo = ref(false)
+
+function startQuickTodo() {
+  if (addingTodo.value) return
+  addingTodo.value = true
+  todoQuickText.value = ''
+  nextTick(() => {
+    const el = Array.isArray(todoQuickInput.value) ? todoQuickInput.value[0] : todoQuickInput.value
+    el?.focus()
+  })
+}
+
+function cancelQuickTodo() {
+  addingTodo.value = false
+  todoQuickText.value = ''
+}
+
+async function saveQuickTodo() {
+  const title = todoQuickText.value.trim()
+  if (!title || savingQuickTodo.value) {
+    cancelQuickTodo()
+    return
+  }
+  savingQuickTodo.value = true
+  try {
+    await todoApi.create({ title, due_date: todayISO() })
+    ElMessage.success('已新建今日待办')
+    cancelQuickTodo()
+    await refreshAll()
+    scheduleRef.value?.reload?.()
+  } catch {
+    // 拦截器已统一提示错误信息
+  } finally {
+    savingQuickTodo.value = false
+  }
+}
+
+function onQuickTodoBlur() {
+  // 失焦时已有内容就保存，空内容则取消
+  if (todoQuickText.value.trim()) saveQuickTodo()
+  else cancelQuickTodo()
 }
 
 /** 取逾期 + 今天的待办，供提醒栏预览 */

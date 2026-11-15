@@ -411,11 +411,34 @@ def _checkpoints(conn: sqlite3.Connection, experiment_id: int, *, limit: int | N
     return fetch_all(conn, sql, params)
 
 
+def actual_span_text(minutes: int | None, unit: str | None = None,
+                     manual: bool = False) -> str:
+    """实际间隔的显示文字。
+
+    规则很简单：能凑成整天的就用天（如 24h → 1 天、48h → 2 天），
+    凑不成整天的就用小时（如 30h → 30 小时），保留精确时间点。
+    """
+    if minutes is None:
+        return ""
+    minutes = int(round(minutes))
+    if minutes < 0:
+        minutes = 0
+
+    # 正好是整天：显示天数
+    if minutes >= 1440 and minutes % 1440 == 0:
+        return f"{minutes // 1440} 天"
+
+    # 其余一律用小时，不足 1 小时用分钟
+    if minutes < 60:
+        return f"{minutes} 分钟"
+    return f"{round(minutes / 60)} 小时"
+
+
 def annotate_actual_spans(checkpoints: list[dict[str, Any]], experiment: dict[str, Any]) -> None:
     """给已完成的检查点补上「实际间隔」。
 
-    基准是上一次实际检查（done_at），第一次检查则以实验开始时间为基准；
-    同时给出与计划时间的偏差（提前 / 延后多少），方便判断有没有按时检查。
+    基准是上一次实际检查（done_at），第一次检查则以实验开始时间为基准。
+    只记录「距离上一次处理过了多久」，不再计算与计划时间的偏差。
     """
     started = None
     if experiment.get("started_at"):
@@ -423,18 +446,12 @@ def annotate_actual_spans(checkpoints: list[dict[str, Any]], experiment: dict[st
             started = parse_dt(experiment["started_at"])
         except ValidationError:
             started = None
-    planned_minutes = interval_to_minutes(
-        experiment.get("interval_value"), experiment.get("interval_unit")
-    )
 
     prev_done: datetime | None = None
     for item in checkpoints:
         item["actual_span_minutes"] = None
         item["actual_span_text"] = ""
         item["actual_from"] = None
-        item["deviation_minutes"] = None
-        item["deviation_text"] = ""
-        item["deviation_kind"] = None
         if not item.get("done") or not item.get("done_at"):
             continue
         try:
@@ -451,38 +468,8 @@ def annotate_actual_spans(checkpoints: list[dict[str, Any]], experiment: dict[st
         if base is not None:
             minutes = int(round((done_at - base).total_seconds() / 60))
             item["actual_span_minutes"] = minutes
-            item["actual_span_text"] = span_text(minutes)
+            item["actual_span_text"] = actual_span_text(minutes)
             item["actual_from"] = base_label
-        # 与计划时间的偏差：实际检查 - 计划检查
-        try:
-            planned = parse_dt(item["due_at"])
-        except (ValidationError, KeyError):
-            planned = None
-        if planned is not None:
-            diff = int(round((done_at - planned).total_seconds() / 60))
-            item["deviation_minutes"] = diff
-            if abs(diff) < 1:
-                item["deviation_text"] = "准时"
-                item["deviation_kind"] = "on_time"
-            elif diff < 0:
-                item["deviation_text"] = f"提前 {span_text(abs(diff))}"
-                item["deviation_kind"] = "early"
-            else:
-                item["deviation_text"] = f"延后 {span_text(abs(diff))}"
-                item["deviation_kind"] = "late"
-        # 与计划间隔的差（本次实际间隔比设定间隔长/短）
-        if item["actual_span_minutes"] is not None and planned_minutes:
-            delta = item["actual_span_minutes"] - planned_minutes
-            item["interval_delta_minutes"] = delta
-            if abs(delta) < 1:
-                item["interval_delta_text"] = "与设定间隔一致"
-            elif delta < 0:
-                item["interval_delta_text"] = f"比设定间隔短 {span_text(abs(delta))}"
-            else:
-                item["interval_delta_text"] = f"比设定间隔长 {span_text(delta)}"
-        else:
-            item["interval_delta_minutes"] = None
-            item["interval_delta_text"] = ""
         prev_done = done_at
 
 
@@ -871,7 +858,7 @@ def create_experiment(conn: sqlite3.Connection, payload: dict[str, Any],
     notes = normalize_text(payload.get("notes"), max_length=4000)
     extra_notes = normalize_text(payload.get("extra_notes"), max_length=4000)
     interval_value, interval_unit = stored_interval(payload)
-
+    # 用户原始选择的单位（h / d），用于实际间隔按小时还是按天显示
     # 记录的是「实验开始时间」，第一次检查时间 = 开始时间 + 间隔
     started_raw = payload.get("started_at")
     started_at = parse_dt(started_raw, "实验时间") if started_raw else _now()
@@ -882,7 +869,8 @@ def create_experiment(conn: sqlite3.Connection, payload: dict[str, Any],
         "INSERT INTO culture_experiments "
         "(name, notes, started_at, interval_unit, interval_value, extra_notes, "
         " status, created_at, updated_at) VALUES (?,?,?,?,?,?,'active',?,?)",
-        (name, notes, fmt_dt(started_at), interval_unit, interval_value, extra_notes, now_text, now_text),
+        (name, notes, fmt_dt(started_at), interval_unit, interval_value,
+         extra_notes, now_text, now_text),
     )
     experiment_id = int(cursor.lastrowid)
     _sync_relations(conn, experiment_id, payload)
@@ -1497,6 +1485,9 @@ def month_view(conn: sqlite3.Connection, *, month: Any = None,
         bucket = by_day.get(key, {"checks": [], "passages": []})
         pending_checks = [item for item in bucket["checks"] if not item["done"]]
         todos = todo_map.get(key, [])
+        pending_todos = [item for item in todos if not item["done"]]
+        # 右上角角标：把检查、待办、传代都算进去（传代无论几批次都只算 1 次）
+        total_count = len(pending_checks) + len(pending_todos) + (1 if bucket["passages"] else 0)
         days.append({
             "date": key,
             "day": day.day,
@@ -1508,10 +1499,11 @@ def month_view(conn: sqlite3.Connection, *, month: Any = None,
             "passages": bucket["passages"],
             "todos": todos,
             "pending_count": len(pending_checks),
+            "total_count": total_count,
             "done_count": len(bucket["checks"]) - len(pending_checks),
             "overdue_count": len([item for item in pending_checks if item["state"] == "overdue"]),
             "passage_count": len(bucket["passages"]),
-            "todo_count": len([item for item in todos if not item["done"]]),
+            "todo_count": len(pending_todos),
         })
 
     prev_first = (first - timedelta(days=1)).replace(day=1)

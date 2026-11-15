@@ -616,6 +616,42 @@ def test_month_view_includes_passage_todos(client):
     assert data["totals"]["passages"] >= 1
 
 
+def test_month_view_total_count_includes_all_kinds(client):
+    """右上角角标 total_count：检查 + 待办 + 传代（传代只算 1 次）。"""
+    line = create_line(client, "HeLa")
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # 一个今天到点的检查
+    started = datetime.now() - timedelta(hours=24)
+    create_experiment(client, started_at=started.strftime("%Y-%m-%d %H:%M"),
+                      interval_value=24, interval_unit="h")
+
+    # 两条今天的待办
+    for title in ("待办甲", "待办乙"):
+        client.post("/api/todos", json={"title": title, "due_date": today})
+
+    # 两个批次今天需要传代（应只算 1 次）
+    for _ in range(2):
+        batch = client.post("/api/batches", json={
+            "cell_line_id": line["id"], "revival_date": "2026-02-01", "initial_pd": 1.0,
+            "initial_cell_count": 2.0,
+        }).get_json()
+        client.post("/api/records", json={
+            "batch_id": batch["id"], "date": today, "harvested_cells": 4.0,
+            "inoculum_dishes": 2, "per_dish_cells": 1.0, "status": "良好",
+            "next_passage_date": today, "notes": "",
+        })
+
+    data = client.get("/api/experiments/month").get_json()
+    cell = next(day for day in data["days"] if day["is_today"])
+
+    assert cell["pending_count"] == 1          # 只有检查点
+    assert cell["todo_count"] == 2             # 两条待办
+    assert cell["passage_count"] == 2          # 两个批次
+    # 角标：1 检查 + 2 待办 + 1 传代（合并算一次）
+    assert cell["total_count"] == 4
+
+
 def test_month_view_rejects_bad_month(client):
     assert client.get("/api/experiments/month?month=abc").status_code == 400
 
@@ -711,10 +747,10 @@ def test_delete_checkpoint_from_calendar(client):
 
 
 # --------------------------------------------------------------------------
-# 实际间隔记录（提前 / 延后检查）
+# 实际间隔记录（只记「距离上次处理多久」，不记提前/延后）
 # --------------------------------------------------------------------------
 def test_actual_span_on_time(client):
-    """按时检查：实际间隔等于设定间隔，偏差为「准时」。"""
+    """按小时设定的实验：实际间隔按小时显示。"""
     started = datetime.now() - timedelta(hours=25)
     exp = create_experiment(client, started_at=started.strftime("%Y-%m-%d %H:%M"),
                             interval_value=24, interval_unit="h")
@@ -725,15 +761,13 @@ def test_actual_span_on_time(client):
     assert done["actual_span_minutes"] == 24 * 60
     assert done["actual_span_text"] == "1 天"
     assert done["actual_from"] == "实验开始"
-    assert done["deviation_kind"] == "on_time"
-    assert done["interval_delta_text"] == "与设定间隔一致"
+    # 不再返回提前/延后的偏差字段
+    assert "deviation_text" not in done
+    assert "interval_delta_text" not in done
 
 
 def test_actual_span_when_checked_early(client):
-    """提前检查：实际间隔变短，标记为「提前」。
-
-    实验开始于 30 小时前 → 计划检查在 6 小时前；实际 8 小时前就查了 = 提前 2 小时。
-    """
+    """提前检查：只记录实际间隔（22 小时），不标注「提前」。"""
     started = datetime.now() - timedelta(hours=30)
     exp = create_experiment(client, started_at=started.strftime("%Y-%m-%d %H:%M"),
                             interval_value=24, interval_unit="h")
@@ -746,13 +780,10 @@ def test_actual_span_when_checked_early(client):
     done = next(item for item in body["checkpoints"] if item["id"] == cp["id"])
     assert done["actual_span_minutes"] == 22 * 60
     assert done["actual_span_text"] == "22 小时"
-    assert done["deviation_kind"] == "early"
-    assert "提前" in done["deviation_text"]
-    assert "短" in done["interval_delta_text"]
 
 
 def test_actual_span_when_checked_late(client):
-    """延后检查：实际间隔变长，标记为「延后」。"""
+    """延后检查：只记录实际间隔（38 小时），不标注「延后」。"""
     started = datetime.now() - timedelta(hours=40)
     exp = create_experiment(client, started_at=started.strftime("%Y-%m-%d %H:%M"),
                             interval_value=24, interval_unit="h")
@@ -764,9 +795,50 @@ def test_actual_span_when_checked_late(client):
     ).get_json()
     done = next(item for item in body["checkpoints"] if item["id"] == cp["id"])
     assert done["actual_span_minutes"] == 38 * 60
-    assert done["deviation_kind"] == "late"
-    assert "延后" in done["deviation_text"]
-    assert "长" in done["interval_delta_text"]
+    assert done["actual_span_text"] == "38 小时"
+
+
+def test_actual_span_uses_days_for_day_interval(client):
+    """按天设定的实验：实际间隔按天显示。"""
+    started = datetime.now() - timedelta(days=3)
+    exp = create_experiment(client, started_at=started.strftime("%Y-%m-%d %H:%M"),
+                            interval_value=2, interval_unit="d")
+    cp = exp["checkpoints"][0]
+    body = client.post(f"/api/experiments/{exp['id']}/complete", json={"checkpoint_id": cp["id"]}).get_json()
+    done = next(item for item in body["checkpoints"] if item["id"] == cp["id"])
+    assert done["actual_span_minutes"] == 2 * 24 * 60
+    assert done["actual_span_text"] == "2 天"
+
+
+def test_actual_span_manual_checkpoint_uses_combined_format(client):
+    """手动加的点：用「1 天 6 小时」这种组合格式（不是固定周期）。"""
+    exp = create_experiment(client)
+    eid = exp["id"]
+    added = client.post(f"/api/experiments/{eid}/checkpoints", json={"due_at": _dt(24)}).get_json()
+    manual = [cp for cp in added["checkpoints"] if cp["kind"] == "manual"][0]
+    body = client.post(f"/api/experiments/{eid}/complete",
+                       json={"checkpoint_id": manual["id"]}).get_json()
+    done = next(item for item in body["checkpoints"] if item["id"] == manual["id"])
+    # 距上次检查 22 小时，不足一天 → 按小时
+    assert done["actual_span_text"] == "22 小时"
+
+
+def test_actual_span_text_helpers():
+    """actual_span_text：整天显示天数，其余一律显示小时（保留精确时间点）。"""
+    from backend.services.experiments import actual_span_text
+
+    # 正好整天 → 天
+    assert actual_span_text(24 * 60) == "1 天"
+    assert actual_span_text(2 * 24 * 60) == "2 天"
+    # 非整天 → 小时，不能显示成小数天
+    assert actual_span_text(30 * 60) == "30 小时"
+    assert actual_span_text(20 * 60) == "20 小时"
+    assert actual_span_text(38 * 60) == "38 小时"
+    assert actual_span_text(36 * 60) == "36 小时"
+    # 不足 1 小时 → 分钟
+    assert actual_span_text(45) == "45 分钟"
+    # 空值
+    assert actual_span_text(None) == ""
 
 
 def test_second_checkpoint_measures_from_previous_check(client):
@@ -784,13 +856,14 @@ def test_second_checkpoint_measures_from_previous_check(client):
     done2 = next(item for item in body["checkpoints"] if item["id"] == second["id"])
     assert done2["actual_from"] == "上次检查"
     assert done2["actual_span_minutes"] == 20 * 60
+    assert done2["actual_span_text"] == "20 小时"
 
 
 def test_pending_checkpoint_has_no_actual_span(client):
     exp = create_experiment(client)
     pending = exp["checkpoints"][0]
     assert pending["actual_span_minutes"] is None
-    assert pending["deviation_kind"] is None
+    assert pending["actual_span_text"] == ""
 
 
 # --------------------------------------------------------------------------

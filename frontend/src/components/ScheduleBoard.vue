@@ -1,12 +1,12 @@
 <template>
   <div class="schedule-board">
     <div class="sb-toolbar">
-      <el-radio-group v-model="mode" size="small" class="sb-switch">
+      <el-radio-group v-if="!hideSwitch" v-model="mode" size="small" class="sb-switch">
         <el-radio-button value="month">月视图</el-radio-button>
         <el-radio-button value="week">周视图</el-radio-button>
       </el-radio-group>
       <span class="sb-hint">
-        {{ mode === 'month' ? '按月看整体安排' : '每天空间更大，能看到更多待办' }}
+        {{ hideSwitch ? '按天查看检查与传代安排' : (mode === 'month' ? '按月看整体安排' : '每天空间更大，能看到更多待办') }}
       </span>
       <div class="row" style="margin-left: auto; gap: 8px">
         <el-button size="small" type="primary" plain @click="addVisible = true">
@@ -19,8 +19,6 @@
     <MonthCalendar
       v-if="mode === 'month'"
       ref="monthRef"
-      :max-checks="maxChecks"
-      :max-todos="maxTodos"
       @open-check="$emit('open-check', $event)"
       @open-passage="$emit('open-passage', $event)"
       @open-todo="openTodo"
@@ -60,10 +58,10 @@ import DoneTodosDialog from './DoneTodosDialog.vue'
 
 const props = defineProps({
   modelValue: { type: String, default: 'month' },
-  maxChecks: { type: Number, default: 3 },
-  maxTodos: { type: Number, default: 2 },
   // 周视图是否压缩成单行高度（细胞实验页用，避免和首页功能重复）
   weekCompact: { type: Boolean, default: false },
+  // 是否隐藏「月视图 / 周视图」切换（细胞实验页固定用周视图）
+  hideSwitch: { type: Boolean, default: false },
 })
 const emit = defineEmits([
   'update:modelValue',
@@ -73,7 +71,8 @@ const emit = defineEmits([
   'changed',
 ])
 
-const mode = ref(props.modelValue === 'week' ? 'week' : 'month')
+// 隐藏切换时固定用周视图
+const mode = ref(props.hideSwitch || props.modelValue === 'week' ? 'week' : 'month')
 const monthRef = ref(null)
 const weekRef = ref(null)
 

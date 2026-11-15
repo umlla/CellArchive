@@ -62,7 +62,7 @@
       </button>
     </div>
 
-    <!-- ==================== 日程视图（月 / 周） ==================== -->
+    <!-- ==================== 日程视图（单行周视图） ==================== -->
     <div class="panel">
       <div class="panel-head">
         <div>
@@ -73,8 +73,8 @@
       <ScheduleBoard
         ref="weekRef"
         v-model="scheduleMode"
-        :max-checks="4"
         week-compact
+        hide-switch
         @open-check="onCalendarOpen"
         @open-passage="onCalendarPassage"
         @changed="onScheduleChanged"
@@ -353,22 +353,12 @@
                   撤销
                 </el-button>
               </div>
-              <!-- 实际间隔：距上次检查（或实验开始）多久，以及提前/延后了多少 -->
+              <!-- 实际间隔：距上次处理（或实验开始）过了多久 -->
               <div v-if="checkpoint.done && checkpoint.actual_span_minutes !== null" class="tl-span">
                 <span class="span-chip" :title="`基准：${checkpoint.actual_from}`">
                   <el-icon><Timer /></el-icon>
                   实际间隔 <b>{{ checkpoint.actual_span_text }}</b>
                   <em class="span-from">（自{{ checkpoint.actual_from }}）</em>
-                </span>
-                <span
-                  v-if="checkpoint.deviation_text"
-                  class="span-chip"
-                  :class="`dev-${checkpoint.deviation_kind}`"
-                >
-                  {{ checkpoint.deviation_text }}
-                </span>
-                <span v-if="checkpoint.interval_delta_text" class="span-note">
-                  {{ checkpoint.interval_delta_text }}
                 </span>
               </div>
               <div v-else-if="checkpoint.notes" class="tl-result">
@@ -1452,29 +1442,6 @@ watch(
 .span-from {
   font-style: normal;
   font-size: 10.5px;
-  color: var(--ct-faint);
-}
-
-.span-chip.dev-early {
-  background: #eef4ff;
-  border-color: #cddffb;
-  color: #2563eb;
-}
-
-.span-chip.dev-late {
-  background: #fff6f0;
-  border-color: #f5d5bd;
-  color: #c2410c;
-}
-
-.span-chip.dev-on_time {
-  background: #eef8f3;
-  border-color: #c6e7d8;
-  color: var(--ct-success);
-}
-
-.span-note {
-  font-size: 11px;
   color: var(--ct-faint);
 }
 

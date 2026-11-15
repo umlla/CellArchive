@@ -38,14 +38,14 @@
       >
         <div class="cell-head" @click.self="startQuickAdd(day)">
           <span class="cell-day">{{ day.day }}</span>
-          <span v-if="day.overdue_count" class="cell-badge danger">{{ day.overdue_count }}</span>
-          <span v-else-if="day.pending_count" class="cell-badge">{{ day.pending_count }}</span>
+          <span v-if="day.overdue_count" class="cell-badge danger">{{ day.total_count ?? day.pending_count }}</span>
+          <span v-else-if="day.total_count ?? day.pending_count" class="cell-badge">{{ day.total_count ?? day.pending_count }}</span>
         </div>
 
         <div class="cell-body" @click.self="startQuickAdd(day)">
           <!-- 检查点：前面的小方块可直接勾选完成 -->
           <div
-            v-for="item in day.checks.slice(0, maxChecks)"
+            v-for="item in day.checks"
             :key="`c-${item.id}`"
             class="cell-check"
             :class="[`state-${item.done ? 'done' : item.state}`]"
@@ -97,7 +97,7 @@
 
           <!-- 用户自建待办：专属紫色，排在实验检查之后 -->
           <div
-            v-for="todo in day.todos.slice(0, maxTodos)"
+            v-for="todo in day.todos"
             :key="`t-${todo.id}`"
             class="cell-todo"
             :class="{ done: todo.done }"
@@ -139,14 +139,6 @@
               @blur="onQuickBlur(day)"
             />
           </div>
-
-          <button
-            v-if="day.checks.length > maxChecks"
-            class="cell-more"
-            @click.stop="$emit('more', day)"
-          >
-            +{{ day.checks.length - maxChecks }}
-          </button>
         </div>
       </div>
     </div>
@@ -169,10 +161,7 @@ import { experimentApi, todoApi } from '../api'
 import { refreshReminders } from '../reminders'
 import { toLocalMinute } from '../utils'
 
-const props = defineProps({
-  maxChecks: { type: Number, default: 3 },
-  maxTodos: { type: Number, default: 2 },
-})
+// 格子里的检查、待办、传代全部显示，不做条数截断
 const emit = defineEmits(['open-check', 'open-passage', 'open-todo', 'more', 'changed'])
 
 const loading = ref(false)
@@ -429,7 +418,8 @@ onMounted(() => load())
 .month-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  grid-auto-rows: minmax(96px, auto);
+  /* 固定行高：内容多时在格子内部滚动，日历整体高度保持稳定 */
+  grid-auto-rows: 132px;
 }
 
 .month-cell {
@@ -437,6 +427,8 @@ onMounted(() => load())
   border-bottom: 1px solid var(--ct-border);
   padding: 5px 6px 7px;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -499,7 +491,25 @@ onMounted(() => load())
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  min-height: 0;
   flex: 1;
+  /* 内容超出格子高度时在内部滚动 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.cell-body::-webkit-scrollbar {
+  width: 5px;
+}
+
+.cell-body::-webkit-scrollbar-thumb {
+  background: var(--ct-border-strong);
+  border-radius: 3px;
+}
+
+.cell-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* 点格子空白处建待办：悬停时格子底色轻微变化，提示可点 */
@@ -758,16 +768,6 @@ onMounted(() => load())
   border-style: solid;
 }
 
-.cell-more {
-  border: 0;
-  background: transparent;
-  color: var(--ct-primary);
-  font-size: 10.5px;
-  cursor: pointer;
-  padding: 0 4px;
-  text-align: left;
-}
-
 .month-legend {
   display: flex;
   flex-wrap: wrap;
@@ -799,7 +799,7 @@ onMounted(() => load())
 
 @media (max-width: 900px) {
   .month-grid {
-    grid-auto-rows: minmax(80px, auto);
+    grid-auto-rows: 110px;
   }
   .cc-name {
     display: none;
