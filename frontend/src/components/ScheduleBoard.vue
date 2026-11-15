@@ -30,6 +30,7 @@
     <WeekCalendar
       v-else
       ref="weekRef"
+      :compact="weekCompact"
       @open-check="$emit('open-check', $event)"
       @open-passage="$emit('open-passage', $event)"
       @open-todo="openTodo"
@@ -61,6 +62,8 @@ const props = defineProps({
   modelValue: { type: String, default: 'month' },
   maxChecks: { type: Number, default: 3 },
   maxTodos: { type: Number, default: 2 },
+  // 周视图是否压缩成单行高度（细胞实验页用，避免和首页功能重复）
+  weekCompact: { type: Boolean, default: false },
 })
 const emit = defineEmits([
   'update:modelValue',

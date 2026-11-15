@@ -546,8 +546,12 @@ def test_batch_carries_active_experiments(client):
 # --------------------------------------------------------------------------
 def test_week_view_groups_by_day(client):
     now = datetime.now()
+    # 让第一次检查正好落在今天：开始时间 = 今天 00:30 - 间隔（24h）
+    # 不用相对小时数，否则周日晚上跑测试时「明天」会落到下一周，导致断言失败
+    today_start = now.replace(hour=0, minute=30, second=0, microsecond=0)
+    started_today = today_start - timedelta(hours=24)
     client.post("/api/experiments", json={"name": "今天要做", "interval_value": 24, "interval_unit": "h",
-                                          "started_at": _dt(-1)})
+                                          "started_at": started_today.strftime("%Y-%m-%d %H:%M")})
     client.post("/api/experiments", json={"name": "很久以后", "interval_value": 24, "interval_unit": "h",
                                           "started_at": _dt(24 * 60)})
     data = client.get("/api/experiments/week").get_json()

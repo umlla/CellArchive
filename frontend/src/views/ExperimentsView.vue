@@ -74,6 +74,7 @@
         ref="weekRef"
         v-model="scheduleMode"
         :max-checks="4"
+        week-compact
         @open-check="onCalendarOpen"
         @open-passage="onCalendarPassage"
         @changed="onScheduleChanged"

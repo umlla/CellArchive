@@ -13,6 +13,15 @@
         </el-tag>
       </div>
       <div class="row" style="gap: 6px">
+        <el-button
+          v-if="hasToday && canScroll"
+          size="small"
+          text
+          title="把今天滚动到中间"
+          @click="centerToday"
+        >
+          定位今天
+        </el-button>
         <el-button size="small" text circle title="上一周" @click="shift(-1)">
           <el-icon><ArrowLeft /></el-icon>
         </el-button>
@@ -23,19 +32,20 @@
       </div>
     </div>
 
-    <div class="week-grid" :class="{ compact }">
-      <div
-        v-for="day in data?.days || []"
-        :key="day.date"
-        class="week-day"
-        :class="{ today: day.is_today, past: day.is_past && !day.is_today, adding: addingDate === day.date }"
-      >
-        <div class="day-head" @click.self="startQuickAdd(day)">
-          <span class="day-week">{{ day.weekday }}</span>
-          <span class="day-num">{{ day.date.slice(5) }}</span>
-          <span v-if="day.overdue_count" class="day-badge danger">{{ day.overdue_count }}</span>
-          <span v-else-if="day.pending_count" class="day-badge">{{ day.pending_count }}</span>
-        </div>
+    <div ref="scroller" class="week-scroll">
+      <div class="week-grid" :class="{ compact }">
+        <div
+          v-for="day in data?.days || []"
+          :key="day.date"
+          class="week-day"
+          :class="{ today: day.is_today, past: day.is_past && !day.is_today, adding: addingDate === day.date }"
+        >
+          <div class="day-head" @click.self="startQuickAdd(day)">
+            <span class="day-week">{{ day.weekday }}</span>
+            <span class="day-num">{{ day.date.slice(5) }}</span>
+            <span v-if="day.overdue_count" class="day-badge danger">{{ day.overdue_count }}</span>
+            <span v-else-if="day.pending_count" class="day-badge">{{ day.pending_count }}</span>
+          </div>
 
         <div class="day-items" @click.self="startQuickAdd(day)">
           <!-- 检查待办 -->
@@ -156,13 +166,13 @@
             />
           </div>
         </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
-
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { experimentApi, todoApi } from '../api'
 import { refreshReminders } from '../reminders'
@@ -190,6 +200,52 @@ function todoTooltip(todo) {
   if (todo.done) parts.push('（已完成）')
   return parts.join(' · ')
 }
+
+// ---------------- 横向滚动：默认不滚动，提供「定位今天」 ----------------
+const scroller = ref(null)
+const canScroll = ref(false)
+
+const hasToday = computed(() => (data.value?.days || []).some((day) => day.is_today))
+
+/** 检测内容是否超出可视宽度（超出才显示「定位今天」按钮） */
+function updateScrollable() {
+  const el = scroller.value
+  canScroll.value = Boolean(el && el.scrollWidth > el.clientWidth + 2)
+}
+
+/** 把今天那一列平滑滚动到可视区中间；今天不在本周则滚到最左 */
+function centerToday() {
+  const el = scroller.value
+  if (!el) return
+  const days = data.value?.days || []
+  const index = days.findIndex((day) => day.is_today)
+  if (index < 0) {
+    el.scrollTo({ left: 0, behavior: 'smooth' })
+    return
+  }
+  const columnWidth = el.scrollWidth / Math.max(days.length, 1)
+  const target = columnWidth * (index + 0.5) - el.clientWidth / 2
+  el.scrollTo({ left: Math.max(0, target), behavior: 'smooth' })
+}
+
+let resizeObserver = null
+
+onMounted(() => {
+  updateScrollable()
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(updateScrollable)
+    if (scroller.value) resizeObserver.observe(scroller.value)
+  }
+  window.addEventListener('resize', updateScrollable)
+})
+
+onUnmounted(() => {
+  resizeObserver?.disconnect()
+  window.removeEventListener('resize', updateScrollable)
+})
+
+// 数据刷新后重新判断是否可滚动（不自动滚动，保持用户当前位置）
+watch(data, () => nextTick(updateScrollable))
 
 // ---------------- 点格子空白处直接建待办 ----------------
 const addingDate = ref('')
@@ -387,9 +443,34 @@ onMounted(() => load())
   font-size: 13.5px;
 }
 
+/* 横向滚动容器：屏幕够宽时 7 天铺满，不够时可左右滑动 */
+.week-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.week-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.week-scroll::-webkit-scrollbar-thumb {
+  background: var(--ct-border-strong);
+  border-radius: 4px;
+}
+
+.week-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .week-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  /* 每列最小 168px：宽屏铺满，窄屏出现横向滚动 */
+  grid-template-columns: repeat(7, minmax(168px, 1fr));
+  width: max-content;
+  min-width: max(100%, calc(7 * 168px));
 }
 
 .week-day {
@@ -401,7 +482,8 @@ onMounted(() => load())
 }
 
 .week-grid.compact .week-day {
-  min-height: 200px;
+  min-height: 148px;
+  max-height: 148px;
 }
 
 .week-day:last-child {
